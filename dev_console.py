@@ -5,54 +5,34 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Replace with your LXC's static IP
-API_BASE_URL = os.getenv("CORE_API_URL", "http://192.168.0.103:8000")
+API_URL = os.getenv("CORE_API_URL")
 
-def send_command(tool_name, arguments):
-    """Sends the command over the wire to the LXC API."""
-    url = f"{API_BASE_URL}/command"
-    payload = {
-        "tool_name": tool_name,
-        "arguments": arguments
-    }
-    
+def send_command(tool_name, args):
+    """Bridges the physical gap via HTTP."""
+    payload = {"tool_name": tool_name, "arguments": args}
     try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status() # Raise error if the API is down
+        response = requests.post(f"{API_URL}/command", json=payload)
+        response.raise_for_status()
         return response.json()
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def run_console():
-    print("\n" + "="*50)
-    print(" LINK-CORE Remote Console ".center(50, "="))
-    print(f"Target: {API_BASE_URL}")
-    print("="*50)
-
+def main():
+    print(f"[*] LINK-CORE Remote Active | Target: {API_URL}")
     while True:
+        cmd = input("LINK-CORE > ").strip()
+        if cmd in ["exit", "quit"]: break
+        
         try:
-            cmd = input("LINK-REMOTE> ")
-            if cmd.lower() in ['exit', 'quit']: break
-            
+            # Simple parser: 'tool_name {"key": "val"}'
             parts = cmd.split(" ", 1)
             tool = parts[0]
+            args = json.loads(parts[1]) if len(parts) > 1 else {}
             
-            # Simple UI-side parsing for our common tools
-            if tool == "control_home":
-                args = [a.strip() for a in parts[1].split(",")]
-                result = send_command("control_home", {
-                    "domain": args[0], "service": args[1], "entity_id": args[2]
-                })
-            elif tool == "get_context":
-                result = send_command("get_context", {"uid": parts[1].strip()})
-            else:
-                print("[!] Local parser doesn't support that tool yet, but sending anyway...")
-                result = send_command(tool, json.loads(parts[1]))
-
-            print(f"Server Response: {json.dumps(result, indent=2)}")
-
+            result = send_command(tool, args)
+            print(json.dumps(result, indent=2))
         except Exception as e:
-            print(f"[!] Error: {e}")
+            print(f"[!] Input Error: {e}. Format: tool_name {{'arg': 'val'}}")
 
 if __name__ == "__main__":
-    run_console()
+    main()
