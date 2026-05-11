@@ -1,7 +1,17 @@
+import logging
 import json
 import os
 from database import DatabaseManager
 from hass_client import HassClient
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("link-core.log"),
+        logging.StreamHandler()
+    ]
+)
 
 class LinkCore:
     """
@@ -20,17 +30,17 @@ class LinkCore:
             "get_context": self.handle_get_context,
             "read_document": self.handle_read_document # NEW
         }
-        print("[*] LINK-CORE Dispatcher Active. Systems Nominal.")
+        logging.info("[*] LINK-CORE Dispatcher Active. Systems Nominal.")
 
     def process_tool_call(self, tool_name, arguments):
         handler = self.dispatch_map.get(tool_name)
         if handler:
             # We log the action to history so the AI 'remembers' it did it
             self.history.append({"tool": tool_name, "args": arguments})
-            print(f"[*] Dispatching Tool: {tool_name}")
+            logging.info(f"[*] Dispatching Tool: {tool_name}")
             return handler(**arguments)
         
-        print(f"[!] No handler found for tool: {tool_name}")
+        logging.warning(f"[!] No handler found for tool: {tool_name}")
         return False
 
     # --- Tool Handlers ---
@@ -43,15 +53,16 @@ class LinkCore:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                print(f"[*] Read {len(content)} characters from {file_path}")
+                logging.info(f"[*] Read {len(content)} characters from {file_path}")
                 return content
         except Exception as e:
+            logging.error(f"Error reading file: {str(e)}")
             return f"Error reading file: {str(e)}"
 
     def handle_get_context(self, uid):
         """Retrieves and prints node context for debugging or LLM feeding."""
         context = self.db.get_node_context(uid)
-        print(f"[CONTEXT] {context}")
+        logging.info(f"[CONTEXT] {context}")
         return context
 
     def handle_update_memory(self, target_uid, key, value):
@@ -65,13 +76,13 @@ class LinkCore:
     def shutdown(self):
         """Clean resource release."""
         self.db.close()
-        print("[*] LINK-CORE Offline.")
+        logging.info("[*] LINK-CORE Offline.")
 
 if __name__ == "__main__":
     import time
     core = LinkCore()
     try:
-        print("[*] LINK-CORE Service successfully initialized.")
+        logging.info("[*] LINK-CORE Service successfully initialized.")
         # This loop keeps the process alive so Systemd doesn't restart it.
         while True:
             # This is where a 'listener' for a queue or API will sit.
@@ -79,6 +90,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(f"[!] Critical System Error: {e}")
+        logging.error(f"[!] Critical System Error: {e}")
     finally:
         core.shutdown()
