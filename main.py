@@ -68,28 +68,17 @@ class LinkCore:
         print("[*] LINK-CORE Offline.")
 
 if __name__ == "__main__":
+    import time
     core = LinkCore()
     try:
-        # --- PHASE 3 MOCK TEST ---
-        # Check current memory for 'dad'
-        core.process_tool_call("get_context", {"uid": "dad"})
-
-        # Simulate the AI deciding to update 'dad's status
-        core.process_tool_call("update_memory", {
-            "target_uid": "dad", 
-            "key": "status", 
-            "value": "focus_mode"
-        })
-
-        # Simulate the AI triggering a light based on that status
-        core.process_tool_call("control_home", {
-            "domain": "light",
-            "service": "turn_on",
-            "entity_id": "light.office",
-            "brightness": 255
-        })
-
+        print("[*] LINK-CORE Service successfully initialized.")
+        # This loop keeps the process alive so Systemd doesn't restart it.
+        while True:
+            # This is where a 'listener' for a queue or API will sit.
+            time.sleep(60) 
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
-        print(f"[!] System Error: {e}")
+        print(f"[!] Critical System Error: {e}")
     finally:
         core.shutdown()
