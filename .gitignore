@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+.venv/
+*.py[cod]
+
+# Secrets & Data (CRITICAL)
+.env
+memory.sqlite
+*.log
+
+# IDE
+.vscode/
