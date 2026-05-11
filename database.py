@@ -167,6 +167,53 @@ class DatabaseManager:
 
         return " ".join(context_parts)
 
+    def get_relevant_context(self, keywords: list) -> str:
+        """Pulls only nodes that match specific keywords to prevent token bloat."""
+        if not keywords:
+            return "No keywords provided for context retrieval."
+            
+        cursor = self.conn.cursor()
+        # Dynamic SQL query with multiple LIKE clauses
+        conditions = " OR ".join(["uid LIKE ? OR label LIKE ? OR display_name LIKE ?" for _ in keywords])
+        
+        # Multiply keywords by 3 because we check 3 columns per keyword
+        wildcard_keywords = []
+        for kw in keywords:
+            wildcard_keywords.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
+            
+        query = f"SELECT uid, label, display_name FROM nodes WHERE {conditions}"
+        cursor.execute(query, wildcard_keywords)
+        results = cursor.fetchall()
+        
+        if not results:
+            return "No relevant LORE found for those keywords."
+            
+        context_string = "### RELEVANT LORE ###\n"
+        for row in results:
+            # For each matched node, pull its full context using our existing method
+            context_string += self.get_node_context(row[0]) + "\n"
+            
+        return context_string
+
+    def upsert_lore(self, target_uid: str, key: str, value: str):
+        """Intelligently updates memory. Creates the node if it doesn't exist."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
+        result = cursor.fetchone()
+
+        if not result:
+            # The AI is trying to learn about something new. Create a generic node first.
+            print(f"[*] Autonomous Learning: Creating new entity '{target_uid}'")
+            # Format a clean display name from the UID
+            display_name = target_uid.replace("_", " ").title()
+            self.add_node(label="Entity", display_name=display_name, uid=target_uid)
+
+        # Now apply the property update using the existing method
+        success = self.set_property("NODE", target_uid, key, value)
+        if success:
+            return f"Successfully updated memory for {target_uid}: {key} = {value}"
+        return f"Failed to update memory for {target_uid}."
+
 if __name__ == "__main__":
     db = DatabaseManager()
     db.close()

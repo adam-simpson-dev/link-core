@@ -4,7 +4,8 @@
 ![SQLite](https://img.shields.io/badge/SQLite-Graph_Memory-003B57?logo=sqlite&logoColor=white)
 ![Home Assistant](https://img.shields.io/badge/Home_Assistant-Bridge-41BDF5?logo=homeassistant&logoColor=white)
 ![Proxmox](https://img.shields.io/badge/Proxmox-LXC_Deployed-E57000?logo=proxmox&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Phase_3_Active-brightgreen)
+![FastAPI](https://img.shields.io/badge/FastAPI-API_Bridge-009688?logo=fastapi&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Phase_5_Complete-brightgreen)
 
 > **A decoupled, Brain-Agnostic architecture bridging a localized Knowledge Graph with physical Smart Home hardware.**
 
@@ -22,14 +23,14 @@ The system is separated into three distinct modules to ensure high resilience an
 
 *   **LORE (`database.py`):** The Knowledge Graph. Uses an Upsert pattern to store Entities (Nodes), Relationships (Edges), and Context (Properties). Flattens graph data into LLM-readable context strings.
 *   **HASS (`hass_client.py`):** The Hands. A secure bridge to the Home Assistant REST API for reading device states and triggering services.
-*   **CORE (`main.py`):** The Orchestrator. Maps JSON Tool Schemas (defined in `tools.py`) to internal Python methods, allowing any "Brain" to control the system.
+*   **CORE (`api.py` & `main.py`):** The Orchestrator. A FastAPI server that maps incoming JSON Tool Schemas (defined in `tools.py`) to internal Python methods, allowing any remote "Brain" to control the system.
 
 ## 🛠️ Tech Stack
 
 *   **Language:** Python 3.12
 *   **Database:** SQLite (Relational structure acting as a Graph Database)
-*   **Environment:** WSL2 (Dev) -> Proxmox LXC Debian/Ubuntu (Production)
-*   **Key Libraries:** `requests`, `python-dotenv`
+*   **Environment:** Windows/VS Code (Client) -> Proxmox LXC Debian/Ubuntu (Server)
+*   **Key Libraries:** `fastapi`, `uvicorn`, `requests`, `python-dotenv`
 
 ## 🚀 Installation (Local Development)
 
@@ -61,8 +62,36 @@ To run the Developer Console and test the bridge manually:
 
 5. **Run the Developer Console:**
     ```bash
-    python3 dev_console.py
+    uvicorn api:app --host 0.0.0.0 --port 8000
     ```
+
+**Client Interaction (Remote Console)**
+To interact with the live server from a remote machine:
+
+1. Ensure requests and python-dotenv are installed locally.
+
+2. Set CORE_API_URL=http://[LXC_IP]:8000 in your local .env.
+
+3. Run python dev_console.py to dispatch commands over HTTP.
+
+---
+
+🔮 Roadmap
+[x] Phase 1: SQLite Graph Memory (LORE)
+
+[x] Phase 2: Home Assistant Bridge (HASS)
+
+[x] Phase 3: Dynamic Tool Dispatcher (CORE)
+
+[x] Phase 4: Proxmox LXC Deployment & Systemd Daemon
+
+[x] Phase 5: FastAPI Bridge & Decoupled Architecture
+
+[ ] Phase 6: Neural Pathways (Context Engineering) - Building relevance filters and role-based safety fallbacks to prevent destructive LLM hallucinations.
+
+[ ] Phase 7: The Agentic Loop (Execution & Autonomy) - Integrating the LLM API and implementing the ReAct (Observe -> Orient -> Decide -> Act) loop.
+
+[ ] Phase 8: Peripheral Integration - Bridging custom ESP32/Droid hardware via MQTT and routing local Proxmox voice pipelines directly to the API.
 
 ---
 

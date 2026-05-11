@@ -39,11 +39,3 @@ class HassClient:
         else:
             print(f"[!] Service call failed: {response.text}")
             return False
-
-if __name__ == "__main__":
-    # Test: Try to get the state of a known entity (e.g., a light or a sensor)
-    client = HassClient()
-    # Replace 'sun.sun' with an actual entity ID from your HA instance
-    state = client.get_entity_state("sun.sun")
-    if state:
-        print(f"Connection Successful! Sun state is: {state.get('state')}")
