@@ -1,58 +1,58 @@
-from main import LinkCore
+import requests
+import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Replace with your LXC's static IP
+API_BASE_URL = os.getenv("CORE_API_URL", "http://192.168.0.103:8000")
+
+def send_command(tool_name, arguments):
+    """Sends the command over the wire to the LXC API."""
+    url = f"{API_BASE_URL}/command"
+    payload = {
+        "tool_name": tool_name,
+        "arguments": arguments
+    }
+    
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status() # Raise error if the API is down
+        return response.json()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 def run_console():
-    # Spin up the Orchestrator
-    core = LinkCore()
-    
     print("\n" + "="*50)
-    print(" LINK-CORE Developer Console ".center(50, "="))
+    print(" LINK-CORE Remote Console ".center(50, "="))
+    print(f"Target: {API_BASE_URL}")
     print("="*50)
-    print("Available Commands:")
-    print("  1. get_context <uid>")
-    print("  2. update_memory <target_uid>, <key>, <value>")
-    print("  3. control_home <domain>, <service>, <entity_id>")
-    print("Type 'exit' to shut down.\n")
 
     while True:
         try:
-            cmd = input("LINK-BRAIN> ")
-            if cmd.lower() in ['exit', 'quit']:
-                break
+            cmd = input("LINK-REMOTE> ")
+            if cmd.lower() in ['exit', 'quit']: break
             
-            # Simple parser to split the command from its arguments
             parts = cmd.split(" ", 1)
             tool = parts[0]
-
-            if tool == "get_context":
-                uid = parts[1].strip()
-                core.process_tool_call("get_context", {"uid": uid})
-
-            elif tool == "update_memory":
-                # Split arguments by comma
+            
+            # Simple UI-side parsing for our common tools
+            if tool == "control_home":
                 args = [a.strip() for a in parts[1].split(",")]
-                core.process_tool_call("update_memory", {
-                    "target_uid": args[0],
-                    "key": args[1],
-                    "value": args[2]
+                result = send_command("control_home", {
+                    "domain": args[0], "service": args[1], "entity_id": args[2]
                 })
-
-            elif tool == "control_home":
-                args = [a.strip() for a in parts[1].split(",")]
-                core.process_tool_call("control_home", {
-                    "domain": args[0],
-                    "service": args[1],
-                    "entity_id": args[2]
-                })
-
+            elif tool == "get_context":
+                result = send_command("get_context", {"uid": parts[1].strip()})
             else:
-                print(f"[!] Unknown tool: {tool}")
+                print("[!] Local parser doesn't support that tool yet, but sending anyway...")
+                result = send_command(tool, json.loads(parts[1]))
 
-        except IndexError:
-            print("[!] Argument Error. Make sure you are using commas to separate values.")
+            print(f"Server Response: {json.dumps(result, indent=2)}")
+
         except Exception as e:
-            print(f"[!] System Error: {e}")
-
-    core.shutdown()
+            print(f"[!] Error: {e}")
 
 if __name__ == "__main__":
     run_console()
