@@ -55,9 +55,6 @@ class DatabaseManager:
         self.conn.commit()
         print(f"[*] Memory Engine Initialized: {self.db_path}")
 
-    def close(self):
-        self.conn.close()
-
     def add_node(self, label, display_name, uid=None):
         """Adds a new entity to the graph."""
         # If no UID is provided, we lowercase the display name and swap spaces for underscores
@@ -183,15 +180,13 @@ class DatabaseManager:
             
         query = f"SELECT uid, label, display_name FROM nodes WHERE {conditions}"
         cursor.execute(query, wildcard_keywords)
-        results = cursor.fetchall()
+        uids = [row[0] for row in cursor.fetchall()]
         
-        if not results:
+        if not uids:
             return "No relevant LORE found for those keywords."
             
-        context_string = "### RELEVANT LORE ###\n"
-        for row in results:
-            # For each matched node, pull its full context using our existing method
-            context_string += self.get_node_context(row[0]) + "\n"
+        # Compile full context for all found nodes
+        return "\n".join([self.get_node_context(uid) for uid in uids])
             
         return context_string
 
@@ -202,17 +197,26 @@ class DatabaseManager:
         result = cursor.fetchone()
 
         if not result:
-            # The AI is trying to learn about something new. Create a generic node first.
-            print(f"[*] Autonomous Learning: Creating new entity '{target_uid}'")
-            # Format a clean display name from the UID
+            # Create a generic node if the AI is learning something entirely new
             display_name = target_uid.replace("_", " ").title()
-            self.add_node(label="Entity", display_name=display_name, uid=target_uid)
+            self.add_node(uid=target_uid, label="Entity", display_name=display_name)
 
-        # Now apply the property update using the existing method
+        # Apply the property update
         success = self.set_property("NODE", target_uid, key, value)
-        if success:
-            return f"Successfully updated memory for {target_uid}: {key} = {value}"
-        return f"Failed to update memory for {target_uid}."
+        return "Memory updated successfully." if success else "Failed to update memory."
+
+    def delete_node(self, uid: str):
+        """Permanently erases a node and all connected edges via CASCADE."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM nodes WHERE uid = ?", (uid,))
+        self.conn.commit()
+        if cursor.rowcount > 0:
+            return f"Node {uid} and its relationships deleted successfully."
+        return f"No node found with UID {uid}."
+
+    def close(self):
+        """Safely close the connection."""
+        self.conn.close()
 
 if __name__ == "__main__":
     db = DatabaseManager()
