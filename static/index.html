@@ -2,13 +2,13 @@
 <html>
 <head>
     <title>LINK-CORE | Panopticon</title>
-    <script src="//unpkg.com/three"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="//unpkg.com/3d-force-graph"></script>
     <style>
         body { margin: 0; background: #000510; color: #00ffff; font-family: monospace; overflow: hidden; }
         .ui-panel { position: absolute; top: 10px; z-index: 10; pointer-events: none; }
         #left-panel { left: 10px; width: 300px; }
-        #right-panel { right: 10px; width: 280px; } /* The New Inspector Box */
+        #right-panel { right: 10px; width: 280px; }
         
         .box { 
             background: rgba(0, 15, 25, 0.85); 
@@ -49,7 +49,7 @@
     <script>
         const elem = document.getElementById('3d-graph');
         const pulseSpheres = []; 
-        const meshRegistry = {}; // Maps UIDs to their Three.js groups for the visual flash
+        const meshRegistry = {}; 
 
         const Graph = ForceGraph3D()(elem)
             .jsonUrl('/api/graph')
@@ -65,15 +65,14 @@
                 // Pulse
                 const pulseMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6, wireframe: true });
                 const pulse = new THREE.Mesh(new THREE.SphereGeometry(4.2), pulseMaterial);
-                pulse.userData = { phase: Math.random() * Math.PI * 2, speed: 0.015 + Math.random() * 0.02 };
+                pulse.userData = { phase: Math.random() * Math.PI * 2, speed: 0.015 + Math.random() * 0.02, isFlashing: false };
                 
                 pulseSpheres.push(pulse);
                 group.add(pulse);
 
-                meshRegistry[node.id] = group; // Register for external manipulation
+                meshRegistry[node.id] = group; 
                 return group;
             })
-            // CLICK TO INSPECT
             .onNodeClick(node => fetchNodeData(node.id))
             .linkColor(() => 'rgba(0, 255, 255, 0.15)')
             .linkWidth(0.5)
@@ -85,20 +84,18 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         Graph.scene().add(ambientLight);
 
-        // Ambient Idle Pulse
         (function animatePulses() {
             requestAnimationFrame(animatePulses);
             pulseSpheres.forEach(p => {
                 p.userData.phase += p.userData.speed;
                 const scale = 1 + Math.max(0, Math.sin(p.userData.phase) * 0.8); 
                 p.scale.set(scale, scale, scale);
-                if (!p.userData.isFlashing) { // Only apply ambient fade if not currently supercharged
+                if (!p.userData.isFlashing) { 
                     p.material.opacity = Math.max(0, 0.5 - (scale - 1) * 0.5); 
                 }
             });
         })();
 
-        // THE DATA WAKE (Sequential Flash)
         function triggerSequentialPulse(uids) {
             uids.forEach((uid, index) => {
                 setTimeout(() => {
@@ -107,57 +104,68 @@
                         const core = group.children[0];
                         const pulse = group.children[1];
                         
-                        // Flash to pure white/cyan
                         const origCoreHex = core.material.color.getHex();
                         core.material.color.setHex(0xffffff);
                         pulse.userData.isFlashing = true;
                         pulse.scale.set(2.5, 2.5, 2.5);
                         pulse.material.opacity = 1.0;
                         
-                        // Cool down after 600ms
                         setTimeout(() => {
                             core.material.color.setHex(origCoreHex);
                             pulse.userData.isFlashing = false;
                         }, 600);
                     }
-                }, index * 300); // 300ms delay between each node firing
+                }, index * 300); 
             });
         }
 
-        // FETCH NODE DATA
         async function fetchNodeData(uid) {
             try {
                 const res = await fetch(`/api/node/${uid}`);
                 const data = await res.json();
                 
                 document.getElementById('inspector-box').style.display = 'block';
-                document.getElementById('inspect-name').innerText = data.display_name.toUpperCase();
+                document.getElementById('inspect-name').innerText = data.display_name ? data.display_name.toUpperCase() : "UNKNOWN";
                 document.getElementById('inspect-uid').innerText = `UID: ${data.uid} | CLASS: ${data.label}`;
                 
-                const propsHtml = data.properties.map(p => 
-                    `<div class="prop-row"><span class="prop-key">${p.key}</span><span class="prop-val">${p.value}</span></div>`
-                ).join('');
-                document.getElementById('inspect-props').innerHTML = propsHtml;
+                if (data.properties && data.properties.length > 0) {
+                    const propsHtml = data.properties.map(p => 
+                        `<div class="prop-row"><span class="prop-key">${p.key}</span><span class="prop-val">${p.value}</span></div>`
+                    ).join('');
+                    document.getElementById('inspect-props').innerHTML = propsHtml;
+                } else {
+                    document.getElementById('inspect-props').innerHTML = '<div style="color: #448888; margin-top: 10px;">No properties assigned.</div>';
+                }
             } catch (e) { console.error("Inspection failed", e); }
         }
 
-        // TELEMETRY POLLING
         async function updateTelemetry() {
             try {
                 const res = await fetch('/api/telemetry');
                 const data = await res.json();
                 
-                document.getElementById('system-status').innerText = data.state;
-                document.getElementById('system-status').style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
+                const statusEl = document.getElementById('system-status');
+                statusEl.innerText = data.state;
+                statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
                 
-                const log = data.memory.map(m => `> [${m.role.toUpperCase()}] ${m.content}`).join('<br><br>');
-                document.getElementById('memory-log').innerHTML = log;
+                // Graceful handling of empty or Dev Console memory states
+                if (data.memory && data.memory.length > 0) {
+                    const log = data.memory.map(m => {
+                        const role = m.role ? m.role.toUpperCase() : "SYS";
+                        const content = m.content || "Executing backend tool...";
+                        return `> [${role}] ${content}`;
+                    }).join('<br><br>');
+                    document.getElementById('memory-log').innerHTML = log;
+                } else {
+                    document.getElementById('memory-log').innerHTML = "<span style='color: #448888;'>Awaiting Agentic Interaction...</span>";
+                }
 
-                // Trigger the Wake if the backend touched data
                 if (data.active_nodes && data.active_nodes.length > 0) {
                     triggerSequentialPulse(data.active_nodes);
                 }
-            } catch (e) {}
+            } catch (e) {
+                // Fails silently to prevent console spam if the API is momentarily offline
+            }
         }
         setInterval(updateTelemetry, 2000);
     </script>
