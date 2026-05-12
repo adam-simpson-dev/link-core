@@ -88,11 +88,11 @@ To interact with the live server from a remote machine:
 
 [x] Phase 5: FastAPI Bridge & Decoupled Architecture
 
-[ ] Phase 6: Neural Pathways (Context Engineering) - Building relevance filters and role-based safety fallbacks to prevent destructive LLM hallucinations.
+[ ] Phase 6: Neural Pathways (Context Engineering) - Prepare the data structures required for an LLM to understand time, state, and history.
 
-[ ] Phase 7: The Agentic Loop (Execution & Autonomy) - Integrating the LLM API and implementing the ReAct (Observe -> Orient -> Decide -> Act) loop.
+[ ] Phase 7: The Panopticon (Visual Dashboard) - Construct a read-only web interface to monitor the LORE graph, system state, and active memory queue.
 
-[ ] Phase 8: Peripheral Integration - Bridging custom ESP32/Droid hardware via MQTT and routing local Proxmox voice pipelines directly to the API.
+[ ] Phase 8: Cortex Integration (The Inference Bridge) - Connect the AI API key and hand over autonomous execution capabilities.
 
 ---
 

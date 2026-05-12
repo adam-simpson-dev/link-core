@@ -26,7 +26,11 @@ class ToolCall(BaseModel):
 
 @app.get("/health")
 async def health():
-    return {"status": "online", "version": "1.2.0"}
+    return {
+        "status": core.state,
+        "last_error": core.last_error,
+        "version": "1.2.0"
+    }
 
 @app.post("/command")
 async def execute_command(call: ToolCall):
