@@ -130,6 +130,44 @@ TOOL_SCHEMAS = [
             },
             "required": ["confirm_wipe"]
         }
+    },
+    {
+        "name": "batch_update_lore",
+        "description": "Creates multiple nodes, properties, and relationships in a single transaction. Highly efficient for mass data ingestion.",
+        "risk_level": "medium",
+        "requires_confirmation": False,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "entities": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "uid": {"type": "string"},
+                            "properties": {
+                                "type": "object",
+                                "description": "Key-value pairs of traits. e.g., {'role': 'Commander', 'status': 'Active'}"
+                            }
+                        },
+                        "required": ["uid", "properties"]
+                    }
+                },
+                "relationships": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source_uid": {"type": "string"},
+                            "target_uid": {"type": "string"},
+                            "relationship": {"type": "string"}
+                        },
+                        "required": ["source_uid", "target_uid", "relationship"]
+                    }
+                }
+            },
+            "required": ["entities"]
+        }
     }
 ]
 
