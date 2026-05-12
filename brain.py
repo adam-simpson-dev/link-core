@@ -52,10 +52,13 @@ class PromptManager:
         Assembles the state. Returns a dictionary so the FastAPI can read the components 
         before they are flattened for the LLM.
         """
-        system_instructions = f"{self.system_persona}\n\n### LORE CONTEXT ###\n{context_data}\n\n"
+        system_instructions = f"{self.system_persona}\n\n"
         
-        # We inject the schemas here so the AI knows its own capabilities
-        system_instructions += f"### AVAILABLE TOOLS ###\n{json.dumps(TOOL_SCHEMAS, indent=2)}"
+        # INTRINSIC DIAGNOSTICS: The AI wakes up knowing if it's broken.
+        if current_state != "NOMINAL":
+            system_instructions += f"CRITICAL SYSTEM WARNING: You are currently in {current_state}. The last recorded failure was: {last_error}. Inform the user.\n\n"
+        
+        system_instructions += f"### LORE CONTEXT ###\n{context_data}\n\n"
 
         return {
             "system_prompt": system_instructions,

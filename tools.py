@@ -117,6 +117,19 @@ TOOL_SCHEMAS = [
             "properties": {"uid": {"type": "string"}},
             "required": ["uid"]
         }
+    },
+    {
+        "name": "wipe_database",
+        "description": "Completely erases all nodes, properties, and relationships in the LORE graph. Use only when a total reset is requested.",
+        "risk_level": "critical",
+        "requires_confirmation": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "confirm_wipe": {"type": "boolean", "description": "Must be set to true to execute."}
+            },
+            "required": ["confirm_wipe"]
+        }
     }
 ]
 

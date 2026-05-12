@@ -187,5 +187,17 @@ class DatabaseManager:
         self.conn.commit()
         return f"Deleted {uid}." if cursor.rowcount > 0 else "Not found."
 
+    def wipe_database(self):
+        """Erases all data and resets auto-increment counters. Schema remains intact."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM edges")
+        cursor.execute("DELETE FROM properties")
+        cursor.execute("DELETE FROM nodes")
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name IN ('nodes', 'edges', 'properties')")
+        self.conn.commit()
+        
+        self.last_accessed_uids.clear() # Clear the UI telemetry buffer
+        return "CRITICAL: The LORE graph has been completely wiped."
+
     def close(self):
         self.conn.close()
