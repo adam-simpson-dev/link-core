@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import logging
@@ -17,6 +19,7 @@ async def lifespan(app: FastAPI):
     core.shutdown()
 
 app = FastAPI(title="LINK-CORE API", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 core = LinkCore()
 
 class CommandRequest(BaseModel):
@@ -26,6 +29,11 @@ class CommandRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     text: str
+
+@app.get("/")
+async def read_index():
+    """Returns the dashboard UI."""
+    return FileResponse('static/index.html')
 
 @app.get("/health")
 async def health():

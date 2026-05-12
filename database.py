@@ -117,6 +117,22 @@ class DatabaseManager:
         self.conn.commit()
         return f"Updated {target_uid}: {key}={value}"
 
+    def create_relationship(self, source_uid, target_uid, relationship):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (source_uid,))
+        s_res = cursor.fetchone()
+        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
+        t_res = cursor.fetchone()
+
+        if s_res and t_res:
+            cursor.execute(
+                "INSERT INTO edges (source_id, target_id, relationship) VALUES (?, ?, ?)",
+                (s_res[0], t_res[0], relationship)
+            )
+            self.conn.commit()
+            return f"Link established: {source_uid} --[{relationship}]--> {target_uid}"
+        return "Error: One or both UIDs do not exist."
+
     def add_node(self, uid, label, display_name=None):
         cursor = self.conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", (uid, label, display_name))

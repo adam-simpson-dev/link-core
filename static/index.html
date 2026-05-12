@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LINK-CORE | Panopticon</title>
+    <script src="//unpkg.com/3d-force-graph"></script>
+    <style>
+        body { margin: 0; background: #000; color: #0f0; font-family: monospace; overflow: hidden; }
+        #ui-overlay { position: absolute; top: 10px; left: 10px; z-index: 10; pointer-events: none; }
+        .box { background: rgba(0, 20, 0, 0.8); border: 1px solid #0f0; padding: 10px; margin-bottom: 10px; pointer-events: auto; }
+        h2 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+    <div id="ui-overlay">
+        <div class="box" id="state-box">
+            <h2>System State</h2>
+            <div id="system-status">NOMINAL</div>
+        </div>
+        <div class="box" id="telemetry-box">
+            <h2>Active Memory</h2>
+            <div id="memory-log" style="font-size: 10px; max-height: 200px; overflow-y: auto;">
+                Waiting for telemetry...
+            </div>
+        </div>
+    </div>
+    
+    <div id="3d-graph"></div>
+
+    <script>
+        const elem = document.getElementById('3d-graph');
+
+        const Graph = ForceGraph3D()(elem)
+            .jsonUrl('/api/graph') // Fetches from your FastAPI endpoint
+            .nodeLabel('name')     // Display the 'display_name' on hover
+            .nodeAutoColorBy('label') // Color code by type (Entity, Room, etc.)
+            .linkDirectionalParticles(2) // Flowing particles along lines
+            .linkDirectionalParticleSpeed(d => 0.01);
+
+        // Update Telemetry Box 1 (Status) and Box 2 (Memory)
+        async function updateTelemetry() {
+            try {
+                const res = await fetch('/api/telemetry');
+                const data = await res.json();
+                document.getElementById('system-status').innerText = data.state;
+                document.getElementById('system-status').style.color = data.state === 'NOMINAL' ? '#0f0' : '#f00';
+                
+                const log = data.memory.map(m => `[${m.role}] ${m.content}`).join('<br>');
+                document.getElementById('memory-log').innerHTML = log;
+            } catch (e) { console.error("Telemetry failure", e); }
+        }
+
+        setInterval(updateTelemetry, 2000); // Poll every 2 seconds
+    </script>
+</body>
+</html>

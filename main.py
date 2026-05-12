@@ -37,6 +37,7 @@ class LinkCore:
             self.dispatch_map = {
                 "get_context": self.db.get_relevant_context,
                 "update_memory": self.db.upsert_lore,
+                "create_link": self.db.create_relationship,
                 "control_home": self.handle_home_control,
                 "read_document": self.handle_read_document,
                 "delete_node": self.db.delete_node

@@ -37,6 +37,21 @@ TOOL_SCHEMAS = [
         }
     },
     {
+        "name": "create_link",
+        "description": "Establishes a relationship between two existing entities in LORE.",
+        "risk_level": "low",
+        "requires_confirmation": False,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source_uid": {"type": "string", "description": "The UID of the starting node."},
+                "target_uid": {"type": "string", "description": "The UID of the destination node."},
+                "relationship": {"type": "string", "description": "The type of connection (e.g., 'married_to', 'parent_of', 'located_in')."}
+            },
+            "required": ["source_uid", "target_uid", "relationship"]
+        }
+    },
+    {
         "name": "control_home",
         "description": "Triggers an action in the smart home via Home Assistant.",
         "risk_level": "low",
