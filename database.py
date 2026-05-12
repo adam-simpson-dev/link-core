@@ -187,8 +187,11 @@ class DatabaseManager:
         self.conn.commit()
         return f"Deleted {uid}." if cursor.rowcount > 0 else "Not found."
 
-    def wipe_database(self):
+    def wipe_database(self, confirm_wipe: bool = False):
         """Erases all data and resets auto-increment counters. Schema remains intact."""
+        if not confirm_wipe:
+            return "Wipe aborted. Explicit confirmation required."
+
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM edges")
         cursor.execute("DELETE FROM properties")
