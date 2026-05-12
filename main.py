@@ -40,7 +40,8 @@ class LinkCore:
                 "create_link": self.db.create_relationship,
                 "control_home": self.handle_home_control,
                 "read_document": self.handle_read_document,
-                "delete_node": self.db.delete_node
+                "delete_node": self.db.delete_node,
+                "wipe_database": self.db.wipe_database
             }
             logging.info("[*] LINK-CORE Dispatcher Active. Systems Nominal.")
         except Exception as e:
