@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LINK-CORE | Panopticon</title>
+    <style>
+        body { margin: 0; background: #000510; color: #00ffff; font-family: monospace; overflow: hidden; }
+        .ui-panel { position: absolute; top: 10px; z-index: 10; pointer-events: none; }
+        #left-panel { left: 10px; width: 300px; }
+        #right-panel { right: 10px; width: 280px; }
+        
+        .box { 
+            background: rgba(0, 15, 25, 0.85); 
+            border: 1px solid #00ffff; 
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3), inset 0 0 10px rgba(0, 255, 255, 0.1);
+            padding: 15px; margin-bottom: 15px; pointer-events: auto; border-radius: 4px;
+            backdrop-filter: blur(4px);
+        }
+        
+        h2 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #ffffff; text-shadow: 0 0 8px #00ffff; letter-spacing: 2px;}
+        .prop-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0,255,255,0.2); padding: 4px 0;}
+        .prop-key { color: #88ffff; }
+        .prop-val { color: #ffffff; text-align: right;}
+    </style>
+</head>
+<body>
+    <div class="ui-panel" id="left-panel">
+        <div class="box">
+            <h2>System State</h2>
+            <div id="system-status" style="font-weight: bold;">NOMINAL</div>
+        </div>
+        <div class="box">
+            <h2>Active Memory</h2>
+            <div id="memory-log" style="font-size: 11px; max-height: 250px; overflow-y: auto; line-height: 1.4;"></div>
+        </div>
+    </div>
+
+    <div class="ui-panel" id="right-panel">
+        <div class="box" id="inspector-box" style="display: none;">
+            <h2 id="inspect-name">NODE</h2>
+            <div style="font-size: 10px; color: #888; margin-bottom: 10px;" id="inspect-uid"></div>
+            <div id="inspect-props"></div>
+        </div>
+    </div>
+    
+    <div id="3d-graph"></div>
+
+    <script type="module">
+        import * as THREE from 'https://esm.sh/three';
+        import ForceGraph3D from 'https://esm.sh/3d-force-graph';
+
+        const elem = document.getElementById('3d-graph');
+        const meshRegistry = {}; 
+        
+        // Define our TRON color palette globally for the Lerp function
+        const baseColor = new THREE.Color(0x0088ff); // Deep glowing blue
+        const flashColor = new THREE.Color(0xffffff); // Pure white
+
+        const Graph = ForceGraph3D()(elem)
+            .jsonUrl('/api/graph')
+            .nodeLabel('name')
+            .nodeThreeObject(node => {
+                const group = new THREE.Group();
+
+                // The Core (Firefly Glow)
+                // Every node gets a UNIQUE material so they can cycle asynchronously
+                const coreMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0x0088ff, 
+                    emissive: 0x004488, // The core emits its own dark cyan light
+                    shininess: 100 
+                    });
+                const core = new THREE.Mesh(new THREE.SphereGeometry(4), coreMaterial);
+                // Assign a random phase and speed for the color breathing effect
+                core.userData = { phase: Math.random() * Math.PI * 2, speed: 0.01 + Math.random() * 0.02 };
+                group.add(core);
+
+                // The Radar Ping (Dormant until triggered)
+                const pulseMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x00ffff, 
+                    transparent: true, 
+                    opacity: 0, // Invisible at rest
+                    depthWrite: false 
+                });
+                const pulse = new THREE.Mesh(new THREE.SphereGeometry(4), pulseMaterial);
+                pulse.userData = { progress: 0, speed: 0.02, isPinging: false };
+                group.add(pulse);
+
+                meshRegistry[node.id] = group; 
+                return group;
+            })
+            .onNodeClick(node => fetchNodeData(node.id))
+            .linkColor(() => 'rgba(0, 255, 255, 0.15)')
+            .linkWidth(0.5)
+            .linkDirectionalParticles(d => Math.floor(Math.random() * 3) + 1)
+            .linkDirectionalParticleWidth(1.5)
+            .linkDirectionalParticleColor(() => '#00ffff')
+            .linkDirectionalParticleSpeed(d => 0.004 + Math.random() * 0.008);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        Graph.scene().add(ambientLight);
+
+        // The Dual Animation Loop (Idle Firefly & Active Ping)
+        (function animateGraph() {
+            requestAnimationFrame(animateGraph);
+            
+            Object.values(meshRegistry).forEach(group => {
+                const core = group.children[0];
+                const pulse = group.children[1];
+
+                // --- IDLE: Firefly Color Breathing ---
+                core.userData.phase += core.userData.speed;
+                // Calculate sine wave from 0.0 to 1.0
+                const mixRatio = (Math.sin(core.userData.phase) + 1) / 2; 
+                // Linearly interpolate between the deep blue and white
+                core.material.color.lerpColors(baseColor, flashColor, mixRatio);
+
+                // --- ACTIVE: Radar Ping Expansion ---
+                if (pulse.userData.isPinging) {
+                    pulse.userData.progress += pulse.userData.speed;
+
+                    // Execute the expansion and fade
+                    const currentScale = 1 + (pulse.userData.progress * 1.5); // Grows to 2.5x size
+                    pulse.scale.set(currentScale, currentScale, currentScale);
+                    pulse.material.opacity = Math.max(0, 0.6 * (1 - pulse.userData.progress)); 
+
+                    // Kill the ping when it reaches maximum radius
+                    if (pulse.userData.progress >= 1.0) {
+                        pulse.userData.isPinging = false;
+                        pulse.userData.progress = 0;
+                        pulse.material.opacity = 0;
+                        pulse.scale.set(1, 1, 1);
+                    }
+                }
+            });
+        })();
+
+        // The Data Wake Trigger
+        function triggerSequentialPulse(uids) {
+            uids.forEach((uid, index) => {
+                setTimeout(() => {
+                    const group = meshRegistry[uid];
+                    if (group) {
+                        const pulse = group.children[1];
+                        // Simply ignite the boolean flag; the animation loop handles the physics
+                        pulse.userData.progress = 0;
+                        pulse.userData.isPinging = true;
+                    }
+                }, index * 200); 
+            });
+        }
+
+        // --- Fetch & Telemetry logic remains identical ---
+        async function fetchNodeData(uid) {
+            try {
+                const res = await fetch(`/api/node/${uid}`);
+                const data = await res.json();
+                
+                document.getElementById('inspector-box').style.display = 'block';
+                document.getElementById('inspect-name').innerText = data.display_name ? data.display_name.toUpperCase() : "UNKNOWN";
+                document.getElementById('inspect-uid').innerText = `UID: ${data.uid} | CLASS: ${data.label}`;
+                
+                if (data.properties && data.properties.length > 0) {
+                    const propsHtml = data.properties.map(p => 
+                        `<div class="prop-row"><span class="prop-key">${p.key}</span><span class="prop-val">${p.value}</span></div>`
+                    ).join('');
+                    document.getElementById('inspect-props').innerHTML = propsHtml;
+                } else {
+                    document.getElementById('inspect-props').innerHTML = '<div style="color: #448888; margin-top: 10px;">No properties assigned.</div>';
+                }
+            } catch (e) { console.error("Inspection failed", e); }
+        }
+
+        async function updateTelemetry() {
+            try {
+                const res = await fetch('/api/telemetry');
+                const data = await res.json();
+                
+                const statusEl = document.getElementById('system-status');
+                statusEl.innerText = data.state;
+                statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
+                
+                if (data.memory && data.memory.length > 0) {
+                    const log = data.memory.map(m => {
+                        const role = m.role ? m.role.toUpperCase() : "SYS";
+                        const content = m.content || "Executing backend tool...";
+                        return `> [${role}] ${content}`;
+                    }).join('<br><br>');
+                    document.getElementById('memory-log').innerHTML = log;
+                } else {
+                    document.getElementById('memory-log').innerHTML = "<span style='color: #448888;'>Awaiting Agentic Interaction...</span>";
+                }
+
+                if (data.active_nodes && data.active_nodes.length > 0) {
+                    triggerSequentialPulse(data.active_nodes);
+                }
+            } catch (e) {}
+        }
+        setInterval(updateTelemetry, 2000);
+    </script>
+</body>
+</html>

@@ -8,9 +8,10 @@ class DatabaseManager:
     def __init__(self, db_path="memory.sqlite"):
         self.db_path = db_path
         # Connect to SQLite (creates the file if it doesn't exist)
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         # CRITICAL: SQLite does not enforce foreign keys by default.
         self.conn.execute("PRAGMA foreign_keys = ON;")
+        self.last_accessed_uids = [] # Tracking data wake in GUI
         self.initialize_schema()
 
     def initialize_schema(self):
@@ -95,13 +96,55 @@ class DatabaseManager:
         return " | ".join(context)
 
     def get_relevant_context(self, keywords: list) -> str:
-        if not keywords: return "No keywords."
+        if not keywords: 
+            return "No keywords provided."
+            
         cursor = self.conn.cursor()
-        conditions = " OR ".join(["uid LIKE ? OR label LIKE ? OR display_name LIKE ?" for _ in keywords])
-        params = [f"%{k}%" for k in keywords for _ in range(3)]
-        cursor.execute(f"SELECT uid FROM nodes WHERE {conditions}", params)
-        uids = [row[0] for row in cursor.fetchall()]
+        uids = set() # Use a set to prevent duplicate pings on the same node
+
+        for kw in keywords:
+            like_kw = f"%{kw}%"
+            
+            # Search Node Names
+            cursor.execute("SELECT uid FROM nodes WHERE uid LIKE ? OR label LIKE ? OR display_name LIKE ?", (like_kw, like_kw, like_kw))
+            uids.update([row[0] for row in cursor.fetchall()])
+            
+            # Search Properties
+            cursor.execute("""
+                SELECT n.uid FROM properties p 
+                JOIN nodes n ON p.target_id = n.id 
+                WHERE p.value LIKE ? OR p.key LIKE ?
+            """, (like_kw, like_kw))
+            uids.update([row[0] for row in cursor.fetchall()])
+
+            # Search Edges
+            # If a link is found, we want BOTH connected nodes to light up
+            cursor.execute("""
+                SELECT n1.uid, n2.uid FROM edges e
+                JOIN nodes n1 ON e.source_id = n1.id
+                JOIN nodes n2 ON e.target_id = n2.id
+                WHERE e.relationship LIKE ?
+            """, (like_kw,))
+            for row in cursor.fetchall():
+                uids.update([row[0], row[1]])
+
+        # Update the telemetry tracker for the 3D Radar Pings
+        self.last_accessed_uids = list(uids)
+        
         return "\n".join([self.get_node_context(u) for u in uids]) if uids else "No lore found."
+
+    def get_node_data(self, uid: str):
+        """Fetches structured JSON data for the UI Inspector."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, label, display_name FROM nodes WHERE uid = ?", (uid,))
+        node = cursor.fetchone()
+        if not node: return {"error": "Node not found."}
+        
+        n_id, n_label, n_name = node
+        cursor.execute("SELECT key, value FROM properties WHERE target_type = 'NODE' AND target_id = ?", (n_id,))
+        props = [{"key": k, "value": v} for k, v in cursor.fetchall()]
+        
+        return {"uid": uid, "label": n_label, "display_name": n_name, "properties": props}
 
     def upsert_lore(self, target_uid: str, key: str, value: str):
         cursor = self.conn.cursor()
@@ -116,6 +159,22 @@ class DatabaseManager:
         cursor.execute("INSERT OR REPLACE INTO properties (target_type, target_id, key, value) VALUES ('NODE', ?, ?, ?)", (n_id, key, value))
         self.conn.commit()
         return f"Updated {target_uid}: {key}={value}"
+
+    def create_relationship(self, source_uid, target_uid, relationship):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (source_uid,))
+        s_res = cursor.fetchone()
+        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
+        t_res = cursor.fetchone()
+
+        if s_res and t_res:
+            cursor.execute(
+                "INSERT INTO edges (source_id, target_id, relationship) VALUES (?, ?, ?)",
+                (s_res[0], t_res[0], relationship)
+            )
+            self.conn.commit()
+            return f"Link established: {source_uid} --[{relationship}]--> {target_uid}"
+        return "Error: One or both UIDs do not exist."
 
     def add_node(self, uid, label, display_name=None):
         cursor = self.conn.cursor()
