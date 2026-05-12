@@ -49,8 +49,11 @@
         import ForceGraph3D from 'https://esm.sh/3d-force-graph';
 
         const elem = document.getElementById('3d-graph');
-        const pulseSpheres = []; 
         const meshRegistry = {}; 
+        
+        // Define our TRON color palette globally for the Lerp function
+        const baseColor = new THREE.Color(0x0088ff); // Deep glowing blue
+        const flashColor = new THREE.Color(0xffffff); // Pure white
 
         const Graph = ForceGraph3D()(elem)
             .jsonUrl('/api/graph')
@@ -58,29 +61,23 @@
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
 
-                // 1. The Core (Clean, no permanent net)
-                const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0044aa, shininess: 100 });
+                // 1. The Core (Firefly Glow)
+                // Every node gets a UNIQUE material so they can cycle asynchronously
+                const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, shininess: 100 });
                 const core = new THREE.Mesh(new THREE.SphereGeometry(4), coreMaterial);
+                // Assign a random phase and speed for the color breathing effect
+                core.userData = { phase: Math.random() * Math.PI * 2, speed: 0.01 + Math.random() * 0.02 };
                 group.add(core);
 
-                // 2. The Radar Ping (Solid, transparent, depthWrite disabled for clean overlap)
+                // 2. The Radar Ping (Dormant until triggered)
                 const pulseMaterial = new THREE.MeshBasicMaterial({ 
                     color: 0x00ffff, 
                     transparent: true, 
-                    opacity: 0, // Starts invisible
+                    opacity: 0, // Invisible at rest
                     depthWrite: false 
                 });
-                // Create it exactly the same size as the core
                 const pulse = new THREE.Mesh(new THREE.SphereGeometry(4), pulseMaterial);
-                
-                // Track 'progress' from 0 to 1 instead of a sine wave phase
-                pulse.userData = { 
-                    progress: Math.random(), // Randomize start times
-                    speed: 0.005 + Math.random() * 0.008, 
-                    isFlashing: false 
-                };
-                
-                pulseSpheres.push(pulse);
+                pulse.userData = { progress: 0, speed: 0.02, isPinging: false };
                 group.add(pulse);
 
                 meshRegistry[node.id] = group; 
@@ -97,51 +94,53 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         Graph.scene().add(ambientLight);
 
-        // 3. The Radar Ping Animation Loop
-        (function animatePulses() {
-            requestAnimationFrame(animatePulses);
-            pulseSpheres.forEach(p => {
-                if (!p.userData.isFlashing) { 
-                    p.userData.progress += p.userData.speed;
-                    
-                    // Reset the ping when it finishes its cycle
-                    if (p.userData.progress > 1.0) {
-                        p.userData.progress = 0;
-                    }
+        // 3. The Dual Animation Loop (Idle Firefly & Active Ping)
+        (function animateGraph() {
+            requestAnimationFrame(animateGraph);
+            
+            Object.values(meshRegistry).forEach(group => {
+                const core = group.children[0];
+                const pulse = group.children[1];
 
-                    // Scale from 1.0 (core size) to 2.0 (double size)
-                    const currentScale = 1 + p.userData.progress; 
-                    p.scale.set(currentScale, currentScale, currentScale);
-                    
-                    // Opacity fades from 0.4 down to exactly 0 as it reaches double size
-                    p.material.opacity = Math.max(0, 0.4 * (1 - p.userData.progress)); 
+                // --- IDLE: Firefly Color Breathing ---
+                core.userData.phase += core.userData.speed;
+                // Calculate sine wave from 0.0 to 1.0
+                const mixRatio = (Math.sin(core.userData.phase) + 1) / 2; 
+                // Linearly interpolate between the deep blue and white
+                core.material.color.lerpColors(baseColor, flashColor, mixRatio);
+
+                // --- ACTIVE: Radar Ping Expansion ---
+                if (pulse.userData.isPinging) {
+                    pulse.userData.progress += pulse.userData.speed;
+
+                    // Execute the expansion and fade
+                    const currentScale = 1 + (pulse.userData.progress * 1.5); // Grows to 2.5x size
+                    pulse.scale.set(currentScale, currentScale, currentScale);
+                    pulse.material.opacity = Math.max(0, 0.6 * (1 - pulse.userData.progress)); 
+
+                    // Kill the ping when it reaches maximum radius
+                    if (pulse.userData.progress >= 1.0) {
+                        pulse.userData.isPinging = false;
+                        pulse.userData.progress = 0;
+                        pulse.material.opacity = 0;
+                        pulse.scale.set(1, 1, 1);
+                    }
                 }
             });
         })();
 
-        // 4. The Data Wake (Supercharged Ping)
+        // 4. The Data Wake Trigger
         function triggerSequentialPulse(uids) {
             uids.forEach((uid, index) => {
                 setTimeout(() => {
                     const group = meshRegistry[uid];
                     if (group) {
-                        const core = group.children[0];
                         const pulse = group.children[1];
-                        
-                        const origCoreHex = core.material.color.getHex();
-                        core.material.color.setHex(0xffffff); // Core flashes white
-                        
-                        pulse.userData.isFlashing = true;
-                        pulse.scale.set(2.2, 2.2, 2.2); // Violent explosion
-                        pulse.material.opacity = 0.8;
-                        
-                        setTimeout(() => {
-                            core.material.color.setHex(origCoreHex);
-                            pulse.userData.isFlashing = false;
-                            pulse.userData.progress = 0; // Reset the idle radar ping
-                        }, 500);
+                        // Simply ignite the boolean flag; the animation loop handles the physics
+                        pulse.userData.progress = 0;
+                        pulse.userData.isPinging = true;
                     }
-                }, index * 200); // Tighter sequence timing (200ms)
+                }, index * 200); 
             });
         }
 
