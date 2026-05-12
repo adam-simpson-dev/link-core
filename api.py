@@ -24,7 +24,7 @@ class CommandRequest(BaseModel):
     arguments: dict
     override: bool = False
 
-class NaturalLanguageRequest(BaseModel):
+class ChatRequest(BaseModel):
     text: str
 
 @app.get("/health")
@@ -53,29 +53,9 @@ async def get_graph():
 
 @app.post("/command")
 async def execute_command(call: CommandRequest):
-    """Direct tool call endpoint with multi-tier error catching."""
-    try:
-        # Dispatch to Orchestrator
-        result = core.process_tool_call(
-            call.tool_name, 
-            call.arguments, 
-            override=call.override
-        )
-        
-        # Catch Logic Errors: If the Orchestrator reports an error state
-        if isinstance(result, dict) and result.get("status") == "error":
-            logger.error(f"Tool Error [{call.tool_name}]: {result.get('message')}")
-            raise HTTPException(status_code=400, detail=result.get("message"))
-            
-        # Catch Lockouts: If the Circuit Breaker is active
-        if isinstance(result, dict) and result.get("status") == "system_locked":
-            raise HTTPException(status_code=503, detail=f"System in SAFE MODE: {result.get('message')}")
+    result = core.process_tool_call(call.tool_name, call.arguments, override=call.override)
+    return {"status": "success", "result": result}
 
-        return {"status": "success", "result": result}
-
-    except HTTPException:
-        raise  # Re-raise FastAPI-specific errors
-    except Exception as e:
-        # Catch Engine Crashes: Handle unhandled exceptions in LinkCore
-        logger.error(f"CRITICAL ENGINE FAILURE: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal Orchestration Error")
+@app.post("/api/interact")
+async def interact(request: ChatRequest):
+    return {"status": "success", "result": core.process_natural_language(request.text)}

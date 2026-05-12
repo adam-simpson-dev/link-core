@@ -60,43 +60,47 @@ class LinkCore:
             "memory": self.history.get_history()
         }
 
-    def process_tool_call(self, tool_name, arguments, override=False):
-        # Check System State before processing any tool calls to prevent damage or infinite loops.
+    def process_natural_language(self, user_input: str):
+        """
+        Phase 6, Step 3: The Agentic Loop.
+        Currently compiles context and waits for the LLM bridge.
+        """
         if self.state == "SAFE_MODE":
-            return {
-                "status": "system_locked",
-                "message": f"Core is in SAFE MODE. Reason: {self.last_error}. Manual intervention required."
-            }
+            return {"error": "System locked in SAFE_MODE."}
+
+        # Internal Keyword Extraction (Heuristic for now)
+        keywords = user_input.split()
+        context = self.db.get_relevant_context(keywords)
+
+        # Add message to short-term memory
+        self.history.add_message("user", user_input)
+
+        # Compile the Prompt for the future LLM
+        payload = self.brain.compile_payload(user_input, context, self.history.get_context())
+        
+        logging.info(f"[*] Prompt Compiled for: {user_input}")
+        return {"status": "ready_for_inference", "payload": payload}
+
+    def process_tool_call(self, tool_name, arguments, override=False):
+        if self.state == "SAFE_MODE":
+            return {"status": "system_locked", "message": self.last_error}
 
         schema = get_tool_schema(tool_name)
-        # If the tool is unregistered, we return an error immediately to avoid silent failures or unintended consequences.
-        if not schema:
-            logging.warning(f"[!] Attempted to call unregistered tool: {tool_name}")
-            return {"status": "error", "message": f"Tool {tool_name} not found."}
-
-        # Check Security Handshake if the tool requires confirmation and override is not set
         if schema.get("requires_confirmation", False) and not override:
-            return {
-                "status": "pending_authorization",
-                "tool_name": tool_name,
-                "arguments": arguments,
-                "message": f"Execution of {tool_name} requires explicit human confirmation."
-            }
+            return {"status": "pending_authorization", "message": f"Confirm {tool_name}."}
 
-        # Execution & Monitoring
         handler = self.dispatch_map.get(tool_name)
         if handler:
             try:
                 result = handler(**arguments)
-                self.error_streak = 0 # Reset error streak on successful execution
+                self.error_streak = 0 # Reset error streak on success
                 return {"status": "executed", "data": result}
             except Exception as e:
                 self.error_streak += 1
-                if self.error_streak >= 3: # Threshold for consecutive failures before tripping the breaker
-                    self.trip_breaker(f"Consecutive failures: {str(e)}")
+                if self.error_streak >= 3: self.trip_breaker(str(e))   # Trip breaker after 3 consecutive errors
                 return {"status": "error", "message": str(e)}
-        
-        return {"status": "error", "message": "Handler missing."}
+
+        return {"status": "error", "message": "No handler."}
 
     # --- Tool Handlers ---
     # These are kept separate from the dispatch map to allow for more complex logic, error handling, or multi-step processes that might be required for certain tools.
