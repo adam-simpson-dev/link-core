@@ -2,8 +2,6 @@
 <html>
 <head>
     <title>LINK-CORE | Panopticon</title>
-    <script src="//unpkg.com/three/build/three.min.js"></script>
-    <script src="//unpkg.com/3d-force-graph"></script>
     <style>
         body { margin: 0; background: #000510; color: #00ffff; font-family: monospace; overflow: hidden; }
         .ui-panel { position: absolute; top: 10px; z-index: 10; pointer-events: none; }
@@ -46,7 +44,11 @@
     
     <div id="3d-graph"></div>
 
-    <script>
+    <script type="module">
+        // Explicitly import the libraries from a stable ES module CDN
+        import * as THREE from 'https://esm.sh/three';
+        import ForceGraph3D from 'https://esm.sh/3d-force-graph';
+
         const elem = document.getElementById('3d-graph');
         const pulseSpheres = []; 
         const meshRegistry = {}; 
@@ -148,7 +150,6 @@
                 statusEl.innerText = data.state;
                 statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
                 
-                // Graceful handling of empty or Dev Console memory states
                 if (data.memory && data.memory.length > 0) {
                     const log = data.memory.map(m => {
                         const role = m.role ? m.role.toUpperCase() : "SYS";
@@ -163,9 +164,7 @@
                 if (data.active_nodes && data.active_nodes.length > 0) {
                     triggerSequentialPulse(data.active_nodes);
                 }
-            } catch (e) {
-                // Fails silently to prevent console spam if the API is momentarily offline
-            }
+            } catch (e) {}
         }
         setInterval(updateTelemetry, 2000);
     </script>
