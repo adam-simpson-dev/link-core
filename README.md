@@ -5,7 +5,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home_Assistant-Bridge-41BDF5?logo=homeassistant&logoColor=white)
 ![Proxmox](https://img.shields.io/badge/Proxmox-LXC_Deployed-E57000?logo=proxmox&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API_Bridge-009688?logo=fastapi&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Phase_5_Complete-brightgreen)
+![Status](https://img.shields.io/badge/Status-Phase_7_Complete-brightgreen)
 
 > **A decoupled, Brain-Agnostic architecture bridging a localized Knowledge Graph with physical Smart Home hardware.**
 
@@ -88,9 +88,9 @@ To interact with the live server from a remote machine:
 
 [x] Phase 5: FastAPI Bridge & Decoupled Architecture
 
-[ ] Phase 6: Neural Pathways (Context Engineering) - Prepare the data structures required for an LLM to understand time, state, and history.
+[x] Phase 6: Neural Pathways (Context Engineering)
 
-[ ] Phase 7: The Panopticon (Visual Dashboard) - Construct a read-only web interface to monitor the LORE graph, system state, and active memory queue.
+[x] Phase 7: The Panopticon (Visual Dashboard)
 
 [ ] Phase 8: Cortex Integration (The Inference Bridge) - Connect the AI API key and hand over autonomous execution capabilities.
 

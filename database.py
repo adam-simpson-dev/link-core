@@ -199,5 +199,21 @@ class DatabaseManager:
         self.last_accessed_uids.clear() # Clear the UI telemetry buffer
         return "CRITICAL: The LORE graph has been completely wiped."
 
+    def batch_update_lore(self, entities: list, relationships: list = None):
+        """Processes a bulk JSON payload from the LLM."""
+        log = []
+        for entity in entities:
+            uid = entity.get("uid")
+            props = entity.get("properties", {})
+            for key, value in props.items():
+                self.upsert_lore(uid, key, str(value))
+            log.append(uid)
+            
+        if relationships:
+            for rel in relationships:
+                self.create_relationship(rel.get("source_uid"), rel.get("target_uid"), rel.get("relationship"))
+                
+        return f"Batch processed {len(entities)} entities and {len(relationships or [])} relationships. Processed UIDs: {', '.join(log)}"
+
     def close(self):
         self.conn.close()
