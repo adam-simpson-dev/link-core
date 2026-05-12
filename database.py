@@ -96,13 +96,40 @@ class DatabaseManager:
         return " | ".join(context)
 
     def get_relevant_context(self, keywords: list) -> str:
+        if not keywords: 
+            return "No keywords provided."
+            
         cursor = self.conn.cursor()
-        conditions = " OR ".join(["uid LIKE ? OR label LIKE ? OR display_name LIKE ?" for _ in keywords])
-        params = [f"%{k}%" for k in keywords for _ in range(3)]
-        cursor.execute(f"SELECT uid FROM nodes WHERE {conditions}", params)
-        uids = [row[0] for row in cursor.fetchall()]
-        
-        self.last_accessed_uids = uids # Save for the UI Telemetry
+        uids = set() # Use a set to prevent duplicate pings on the same node
+
+        for kw in keywords:
+            like_kw = f"%{kw}%"
+            
+            # Search Node Names
+            cursor.execute("SELECT uid FROM nodes WHERE uid LIKE ? OR label LIKE ? OR display_name LIKE ?", (like_kw, like_kw, like_kw))
+            uids.update([row[0] for row in cursor.fetchall()])
+            
+            # Search Properties
+            cursor.execute("""
+                SELECT n.uid FROM properties p 
+                JOIN nodes n ON p.target_id = n.id 
+                WHERE p.value LIKE ? OR p.key LIKE ?
+            """, (like_kw, like_kw))
+            uids.update([row[0] for row in cursor.fetchall()])
+
+            # Search Edges
+            # If a link is found, we want BOTH connected nodes to light up
+            cursor.execute("""
+                SELECT n1.uid, n2.uid FROM edges e
+                JOIN nodes n1 ON e.source_id = n1.id
+                JOIN nodes n2 ON e.target_id = n2.id
+                WHERE e.relationship LIKE ?
+            """, (like_kw,))
+            for row in cursor.fetchall():
+                uids.update([row[0], row[1]])
+
+        # Update the telemetry tracker for the 3D Radar Pings
+        self.last_accessed_uids = list(uids)
         
         return "\n".join([self.get_node_context(u) for u in uids]) if uids else "No lore found."
 
