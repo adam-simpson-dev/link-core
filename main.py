@@ -55,7 +55,11 @@ class LinkCore:
         if handler:
             self.history.append({"tool": tool_name, "args": arguments})
             logging.info(f"[*] Dispatching Tool: {tool_name} | Override: {override}")
-            return handler(**arguments)
+            
+            return {
+                "status": "executed", 
+                "data": handler(**arguments)
+            }
         
         return {"status": "error", "message": "Handler missing for registered tool."}
 

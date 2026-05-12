@@ -38,7 +38,7 @@ To run the Developer Console and test the bridge manually:
 
 1. **Clone the repository:**
     ```bash
-    git clone [https://github.com/YOUR_USERNAME/link-core.git](https://github.com/YOUR_USERNAME/link-core.git)
+    git clone [https://github.com/adam-simpson-dev/link-core.git](https://github.com/adam-simpson-dev/link-core.git)
     cd link-core
     ```
 
@@ -77,6 +77,7 @@ To interact with the live server from a remote machine:
 ---
 
 🔮 Roadmap
+
 [x] Phase 1: SQLite Graph Memory (LORE)
 
 [x] Phase 2: Home Assistant Bridge (HASS)

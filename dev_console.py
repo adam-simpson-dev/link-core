@@ -32,20 +32,22 @@ def main():
             response = send_command(tool, args)
             result_data = response.get("result", {})
             
-            # The Handshake Interception
+            # Handle Interception
             if result_data.get("status") == "pending_authorization":
                 print(f"\n[!] ALERT: {result_data.get('message')}")
                 auth = input(f"Authorize '{tool}'? [Y/N]: ").strip().upper()
-                
                 if auth == 'Y':
-                    print("[*] Transmitting cryptographic override...")
-                    # Re-fire with the key
                     response = send_command(tool, args, override=True)
+                    result_data = response.get("result", {})
                 else:
-                    print("[-] Action aborted by user.")
+                    print("[-] Action aborted.")
                     continue
-            
-            print(json.dumps(response, indent=2))
+
+            # Handle Display (Extract the 'data' or show the error)
+            if result_data.get("status") == "executed":
+                print(f"[*] Result:\n{result_data.get('data')}")
+            else:
+                print(json.dumps(response, indent=2))
             
         except Exception as e:
             print(f"[!] Input Error: {e}. Format: tool_name {{'arg': 'val'}}")
