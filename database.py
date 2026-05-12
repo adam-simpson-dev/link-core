@@ -16,7 +16,6 @@ class DatabaseManager:
     def initialize_schema(self):
         """Create the Triadic Schema tables if they don't already exist."""
         cursor = self.conn.cursor()
-
         # Nodes: The Entities (People, Pets, Rooms)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS nodes (
@@ -55,169 +54,80 @@ class DatabaseManager:
         self.conn.commit()
         print(f"[*] Memory Engine Initialized: {self.db_path}")
 
-    def add_node(self, label, display_name, uid=None):
-        """Adds a new entity to the graph."""
-        # If no UID is provided, we lowercase the display name and swap spaces for underscores
-        if not uid:
-            uid = display_name.lower().replace(" ", "_")
-        
-        query = "INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)"
-        try:
-            cursor = self.conn.cursor()
-            cursor.execute(query, (uid, label, display_name))
-            self.conn.commit()
-            return cursor.lastrowid
-        except sqlite3.IntegrityError:
-            print(f"[!] Node with UID '{uid}' already exists.")
-            return None
-
-    def add_edge(self, source_uid, target_uid, relationship):
-        """Creates a link between two nodes using their UIDs."""
+    # --- GUI FETCHERS ---
+    def get_all_nodes(self):
+        """Fetches every entity for the 3D visualizer."""
         cursor = self.conn.cursor()
-        
-        # We need to find the IDs for the UIDs provided
-        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (source_uid,))
-        source_res = cursor.fetchone()
-        
-        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        target_res = cursor.fetchone()
+        cursor.execute("SELECT uid, label, display_name FROM nodes")
+        return cursor.fetchall()
 
-        if not source_res or not target_res:
-            print("[!] Could not find one or both nodes to link.")
-            return None
-
-        query = "INSERT INTO edges (source_id, target_id, relationship) VALUES (?, ?, ?)"
-        cursor.execute(query, (source_res[0], target_res[0], relationship))
-        self.conn.commit()
-        return cursor.lastrowid
-
-    def set_property(self, target_type, target_uid, key, value):
-        """
-        Sets a property for a node or an edge. 
-        If it exists, it updates; if not, it creates.
-        """
+    def get_all_edges(self):
+        """Fetches relationships using UIDs for the frontend linker."""
         cursor = self.conn.cursor()
-        
-        # Resolve the ID based on the target_type
-        if target_type == 'NODE':
-            cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        else:
-            # For EDGES, we'd typically need a more complex lookup, 
-            # but for now, we'll assume target_uid is the Edge ID.
-            # We will refine Edge property setting later.
-            pass
-
-        result = cursor.fetchone()
-        if not result:
-            print(f"[!] Could not find {target_type} with UID {target_uid}")
-            return False
-
-        target_id = result[0]
-
-        # The UPSERT command
         query = """
-            INSERT INTO properties (target_type, target_id, key, value)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(target_type, target_id, key) 
-            DO UPDATE SET value = excluded.value;
+            SELECT e.id, n1.uid, n2.uid, e.relationship
+            FROM edges e
+            JOIN nodes n1 ON e.source_id = n1.id
+            JOIN nodes n2 ON e.target_id = n2.id
         """
-        cursor.execute(query, (target_type, target_id, key, str(value)))
-        self.conn.commit()
-        return True
+        cursor.execute(query)
+        return cursor.fetchall()
 
+
+    # --- LORE LOGIC ---
     def get_node_context(self, uid):
-        """
-        Retrieves everything the system knows about a specific UID 
-        and flattens it into a descriptive string.
-        """
         cursor = self.conn.cursor()
-
-        # Get basic Node info
         cursor.execute("SELECT id, label, display_name FROM nodes WHERE uid = ?", (uid,))
         node = cursor.fetchone()
-        if not node:
-            return f"I have no record of an entity with UID '{uid}'."
+        if not node: return f"UID '{uid}' not found."
 
         n_id, n_label, n_name = node
-        context_parts = [f"{n_name} (a {n_label})"]
+        context = [f"{n_name} ({n_label})"]
 
-        # Get all Properties
         cursor.execute("SELECT key, value FROM properties WHERE target_type = 'NODE' AND target_id = ?", (n_id,))
-        properties = cursor.fetchall()
-        if properties:
-            prop_list = ", ".join([f"{k}: {v}" for k, v in properties])
-            context_parts.append(f"Traits: {prop_list}.")
+        props = [f"{k}: {v}" for k, v in cursor.fetchall()]
+        if props: context.append(f"Traits: {', '.join(props)}")
 
-        # Get all Relationships (Edges)
-        # We look for connections where this node is either the source or the target
-        cursor.execute('''
-            SELECT e.relationship, n.display_name 
-            FROM edges e
-            JOIN nodes n ON e.target_id = n.id
-            WHERE e.source_id = ?
-        ''', (n_id,))
-        relationships = cursor.fetchall()
-        
-        if relationships:
-            rel_list = " and ".join([f"{rel} {target}" for rel, target in relationships])
-            context_parts.append(f"Connections: {n_name} currently {rel_list}.")
+        cursor.execute("SELECT e.relationship, n.display_name FROM edges e JOIN nodes n ON e.target_id = n.id WHERE e.source_id = ?", (n_id,))
+        rels = [f"{r} {t}" for r, t in cursor.fetchall()]
+        if rels: context.append(f"Connections: {' and '.join(rels)}")
 
-        return " ".join(context_parts)
+        return " | ".join(context)
 
     def get_relevant_context(self, keywords: list) -> str:
-        """Pulls only nodes that match specific keywords to prevent token bloat."""
-        if not keywords:
-            return "No keywords provided for context retrieval."
-            
+        if not keywords: return "No keywords."
         cursor = self.conn.cursor()
-        # Dynamic SQL query with multiple LIKE clauses
         conditions = " OR ".join(["uid LIKE ? OR label LIKE ? OR display_name LIKE ?" for _ in keywords])
+        params = []
+        for kw in keywords: params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
         
-        # Multiply keywords by 3 because we check 3 columns per keyword
-        wildcard_keywords = []
-        for kw in keywords:
-            wildcard_keywords.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
-            
-        query = f"SELECT uid, label, display_name FROM nodes WHERE {conditions}"
-        cursor.execute(query, wildcard_keywords)
+        cursor.execute(f"SELECT uid FROM nodes WHERE {conditions}", params)
         uids = [row[0] for row in cursor.fetchall()]
-        
-        if not uids:
-            return "No relevant LORE found for those keywords."
-            
-        # Compile full context for all found nodes
-        return "\n".join([self.get_node_context(uid) for uid in uids])
-            
-        return context_string
+        return "\n".join([self.get_node_context(uid) for uid in uids]) if uids else "No relevant context."
 
     def upsert_lore(self, target_uid: str, key: str, value: str):
-        """Intelligently updates memory. Creates the node if it doesn't exist."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        result = cursor.fetchone()
+        if not cursor.fetchone():
+            self.add_node(uid=target_uid, label="Entity", display_name=target_uid.replace("_", " ").title())
+        
+        # Internal property setter logic
+        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
+        n_id = cursor.fetchone()[0]
+        cursor.execute("INSERT OR REPLACE INTO properties (target_type, target_id, key, value) VALUES ('NODE', ?, ?, ?)", (n_id, key, value))
+        self.conn.commit()
+        return f"Updated {target_uid}: {key}={value}"
 
-        if not result:
-            # Create a generic node if the AI is learning something entirely new
-            display_name = target_uid.replace("_", " ").title()
-            self.add_node(uid=target_uid, label="Entity", display_name=display_name)
-
-        # Apply the property update
-        success = self.set_property("NODE", target_uid, key, value)
-        return "Memory updated successfully." if success else "Failed to update memory."
+    def add_node(self, uid, label, display_name=None):
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", (uid, label, display_name))
+        self.conn.commit()
 
     def delete_node(self, uid: str):
-        """Permanently erases a node and all connected edges via CASCADE."""
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM nodes WHERE uid = ?", (uid,))
         self.conn.commit()
-        if cursor.rowcount > 0:
-            return f"Node {uid} and its relationships deleted successfully."
-        return f"No node found with UID {uid}."
+        return f"Deleted {uid}." if cursor.rowcount > 0 else "Node not found."
 
     def close(self):
-        """Safely close the connection."""
         self.conn.close()
-
-if __name__ == "__main__":
-    db = DatabaseManager()
-    db.close()

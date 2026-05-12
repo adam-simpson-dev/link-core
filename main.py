@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+from brain import MessageHistory, PromptManager
 from database import DatabaseManager
 from hass_client import HassClient
 from tools import get_tool_schema
@@ -20,10 +21,14 @@ class LinkCore:
     via a dynamic Tool Dispatcher.
     """
     def __init__(self):
+        # Circuit Breaker
         self.state = "NOMINAL"
         self.last_error = None
         self.error_streak = 0
-        self.history = []
+        
+        # Neural Pathways
+        self.history = MessageHistory(max_turns=10)
+        self.brain = PromptManager()
 
         try:
             self.db = DatabaseManager()
@@ -46,6 +51,14 @@ class LinkCore:
         self.state = "SAFE_MODE"
         self.last_error = reason
         logging.critical(f"[!] CIRCUIT BREAKER TRIPPED. System Locked. Reason: {reason}")
+
+    def get_system_telemetry(self):
+        """Feeds the UI State and Memory boxes."""
+        return {
+            "state": self.state,
+            "last_error": self.last_error,
+            "memory": self.history.get_history()
+        }
 
     def process_tool_call(self, tool_name, arguments, override=False):
         # Check System State before processing any tool calls to prevent damage or infinite loops.
@@ -75,77 +88,31 @@ class LinkCore:
         if handler:
             try:
                 result = handler(**arguments)
-                self.error_streak = 0  # Reset streak on success
-                self.history.append({"tool": tool_name, "args": arguments})
-                logging.info(f"[*] Dispatching Tool: {tool_name} | Override: {override}")
+                self.error_streak = 0 # Reset error streak on successful execution
                 return {"status": "executed", "data": result}
-            
             except Exception as e:
                 self.error_streak += 1
-                logging.error(f"[!] Tool execution failed: {str(e)}")
-                
-                # If a tool fails 3 times in a row, kill the autonomous capability
-                if self.error_streak >= 3:
-                    self.trip_breaker(f"Consecutive tool failures exceeded limit. Last error: {str(e)}")
-                
-                return {"status": "error", "message": f"Execution failed: {str(e)}"}
+                if self.error_streak >= 3: # Threshold for consecutive failures before tripping the breaker
+                    self.trip_breaker(f"Consecutive failures: {str(e)}")
+                return {"status": "error", "message": str(e)}
         
-        return {"status": "error", "message": "Handler missing for registered tool."}
+        return {"status": "error", "message": "Handler missing."}
 
     # --- Tool Handlers ---
+    # These are kept separate from the dispatch map to allow for more complex logic, error handling, or multi-step processes that might be required for certain tools.
 
     def handle_read_document(self, file_path):
-        """Reads local files for deep context retrieval."""
         if not os.path.exists(file_path):
             return f"Error: File at {file_path} not found."
-        
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                logging.info(f"[*] Read {len(content)} characters from {file_path}")
-                return content
-        except Exception as e:
-            logging.error(f"Error reading file: {str(e)}")
-            return f"Error reading file: {str(e)}"
-
-    def handle_get_context(self, uid):
-        """Retrieves and prints node context for debugging or LLM feeding."""
-        context = self.db.get_node_context(uid)
-        logging.info(f"[CONTEXT] {context}")
-        return context
-
-    def handle_update_memory(self, target_uid, key, value):
-        """Updates the SQLite knowledge graph."""
-        return self.db.set_property("NODE", target_uid, key, value)
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
 
     def handle_home_control(self, domain, service, entity_id, **kwargs):
-        """
-        Extracts entity_id and any optional parameters (brightness, color)
-        and bundles them for the HassClient.
-        """
         service_data = {"entity_id": entity_id}
         service_data.update(kwargs) # This catches brightness, color_name, etc.
-        
         logging.info(f"Refined HA Call: {domain}.{service} -> {service_data}")
         return self.hass.call_service(domain, service, service_data)
 
     def shutdown(self):
-        """Clean resource release."""
         self.db.close()
         logging.info("[*] LINK-CORE Offline.")
-
-if __name__ == "__main__":
-    import time
-    core = LinkCore()
-    try:
-        logging.info("[*] LINK-CORE Service successfully initialized.")
-        # This loop keeps the process alive so Systemd doesn't restart it.
-        while True:
-            # This is where a 'listener' for a queue or API will sit.
-            time.sleep(60) 
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        logging.error(f"[!] Critical System Error: {e}")
-    finally:
-        core.shutdown()
