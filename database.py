@@ -98,22 +98,21 @@ class DatabaseManager:
         if not keywords: return "No keywords."
         cursor = self.conn.cursor()
         conditions = " OR ".join(["uid LIKE ? OR label LIKE ? OR display_name LIKE ?" for _ in keywords])
-        params = []
-        for kw in keywords: params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
-        
+        params = [f"%{k}%" for k in keywords for _ in range(3)]
         cursor.execute(f"SELECT uid FROM nodes WHERE {conditions}", params)
         uids = [row[0] for row in cursor.fetchall()]
-        return "\n".join([self.get_node_context(uid) for uid in uids]) if uids else "No relevant context."
+        return "\n".join([self.get_node_context(u) for u in uids]) if uids else "No lore found."
 
     def upsert_lore(self, target_uid: str, key: str, value: str):
         cursor = self.conn.cursor()
         cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        if not cursor.fetchone():
-            self.add_node(uid=target_uid, label="Entity", display_name=target_uid.replace("_", " ").title())
-        
-        # Internal property setter logic
-        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        n_id = cursor.fetchone()[0]
+        res = cursor.fetchone()
+        if not res:
+            display_name = target_uid.replace("_", " ").title()
+            cursor.execute("INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", (target_uid, "Entity", display_name))
+            n_id = cursor.lastrowid
+        else:
+            n_id = res[0]
         cursor.execute("INSERT OR REPLACE INTO properties (target_type, target_id, key, value) VALUES ('NODE', ?, ?, ?)", (n_id, key, value))
         self.conn.commit()
         return f"Updated {target_uid}: {key}={value}"
@@ -127,7 +126,7 @@ class DatabaseManager:
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM nodes WHERE uid = ?", (uid,))
         self.conn.commit()
-        return f"Deleted {uid}." if cursor.rowcount > 0 else "Node not found."
+        return f"Deleted {uid}." if cursor.rowcount > 0 else "Not found."
 
     def close(self):
         self.conn.close()
