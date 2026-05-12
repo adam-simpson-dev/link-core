@@ -45,7 +45,6 @@
     <div id="3d-graph"></div>
 
     <script type="module">
-        // Explicitly import the libraries from a stable ES module CDN
         import * as THREE from 'https://esm.sh/three';
         import ForceGraph3D from 'https://esm.sh/3d-force-graph';
 
@@ -59,15 +58,27 @@
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
 
-                // Core
+                // 1. The Core (Clean, no permanent net)
                 const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0044aa, shininess: 100 });
                 const core = new THREE.Mesh(new THREE.SphereGeometry(4), coreMaterial);
                 group.add(core);
 
-                // Pulse
-                const pulseMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6, wireframe: true });
-                const pulse = new THREE.Mesh(new THREE.SphereGeometry(4.2), pulseMaterial);
-                pulse.userData = { phase: Math.random() * Math.PI * 2, speed: 0.015 + Math.random() * 0.02, isFlashing: false };
+                // 2. The Radar Ping (Solid, transparent, depthWrite disabled for clean overlap)
+                const pulseMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x00ffff, 
+                    transparent: true, 
+                    opacity: 0, // Starts invisible
+                    depthWrite: false 
+                });
+                // Create it exactly the same size as the core
+                const pulse = new THREE.Mesh(new THREE.SphereGeometry(4), pulseMaterial);
+                
+                // Track 'progress' from 0 to 1 instead of a sine wave phase
+                pulse.userData = { 
+                    progress: Math.random(), // Randomize start times
+                    speed: 0.005 + Math.random() * 0.008, 
+                    isFlashing: false 
+                };
                 
                 pulseSpheres.push(pulse);
                 group.add(pulse);
@@ -86,18 +97,29 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         Graph.scene().add(ambientLight);
 
+        // 3. The Radar Ping Animation Loop
         (function animatePulses() {
             requestAnimationFrame(animatePulses);
             pulseSpheres.forEach(p => {
-                p.userData.phase += p.userData.speed;
-                const scale = 1 + Math.max(0, Math.sin(p.userData.phase) * 0.8); 
-                p.scale.set(scale, scale, scale);
                 if (!p.userData.isFlashing) { 
-                    p.material.opacity = Math.max(0, 0.5 - (scale - 1) * 0.5); 
+                    p.userData.progress += p.userData.speed;
+                    
+                    // Reset the ping when it finishes its cycle
+                    if (p.userData.progress > 1.0) {
+                        p.userData.progress = 0;
+                    }
+
+                    // Scale from 1.0 (core size) to 2.0 (double size)
+                    const currentScale = 1 + p.userData.progress; 
+                    p.scale.set(currentScale, currentScale, currentScale);
+                    
+                    // Opacity fades from 0.4 down to exactly 0 as it reaches double size
+                    p.material.opacity = Math.max(0, 0.4 * (1 - p.userData.progress)); 
                 }
             });
         })();
 
+        // 4. The Data Wake (Supercharged Ping)
         function triggerSequentialPulse(uids) {
             uids.forEach((uid, index) => {
                 setTimeout(() => {
@@ -107,20 +129,23 @@
                         const pulse = group.children[1];
                         
                         const origCoreHex = core.material.color.getHex();
-                        core.material.color.setHex(0xffffff);
+                        core.material.color.setHex(0xffffff); // Core flashes white
+                        
                         pulse.userData.isFlashing = true;
-                        pulse.scale.set(2.5, 2.5, 2.5);
-                        pulse.material.opacity = 1.0;
+                        pulse.scale.set(2.2, 2.2, 2.2); // Violent explosion
+                        pulse.material.opacity = 0.8;
                         
                         setTimeout(() => {
                             core.material.color.setHex(origCoreHex);
                             pulse.userData.isFlashing = false;
-                        }, 600);
+                            pulse.userData.progress = 0; // Reset the idle radar ping
+                        }, 500);
                     }
-                }, index * 300); 
+                }, index * 200); // Tighter sequence timing (200ms)
             });
         }
 
+        // --- Fetch & Telemetry logic remains identical ---
         async function fetchNodeData(uid) {
             try {
                 const res = await fetch(`/api/node/${uid}`);
