@@ -54,13 +54,17 @@ class LinkCore:
         logging.critical(f"[!] CIRCUIT BREAKER TRIPPED. System Locked. Reason: {reason}")
 
     def get_system_telemetry(self):
-        """Feeds the UI State and Memory boxes."""
+        # Grab the active nodes, then immediately clear the buffer
+        active = self.db.last_accessed_uids.copy()
+        self.db.last_accessed_uids.clear()
+        
         return {
             "state": self.state,
             "last_error": self.last_error,
-            "memory": self.history.get_history()
+            "memory": self.history.get_context(),
+            "active_nodes": active # Passed to frontend
         }
-
+        
     def process_natural_language(self, user_input: str):
         """
         Phase 6, Step 3: The Agentic Loop.

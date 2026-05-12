@@ -8,9 +8,10 @@ class DatabaseManager:
     def __init__(self, db_path="memory.sqlite"):
         self.db_path = db_path
         # Connect to SQLite (creates the file if it doesn't exist)
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         # CRITICAL: SQLite does not enforce foreign keys by default.
         self.conn.execute("PRAGMA foreign_keys = ON;")
+        self.last_accessed_uids = [] # Tracking data wake in GUI
         self.initialize_schema()
 
     def initialize_schema(self):
@@ -95,13 +96,28 @@ class DatabaseManager:
         return " | ".join(context)
 
     def get_relevant_context(self, keywords: list) -> str:
-        if not keywords: return "No keywords."
         cursor = self.conn.cursor()
         conditions = " OR ".join(["uid LIKE ? OR label LIKE ? OR display_name LIKE ?" for _ in keywords])
         params = [f"%{k}%" for k in keywords for _ in range(3)]
         cursor.execute(f"SELECT uid FROM nodes WHERE {conditions}", params)
         uids = [row[0] for row in cursor.fetchall()]
+        
+        self.last_accessed_uids = uids # Save for the UI Telemetry
+        
         return "\n".join([self.get_node_context(u) for u in uids]) if uids else "No lore found."
+
+    def get_node_data(self, uid: str):
+        """Fetches structured JSON data for the UI Inspector."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, label, display_name FROM nodes WHERE uid = ?", (uid,))
+        node = cursor.fetchone()
+        if not node: return {"error": "Node not found."}
+        
+        n_id, n_label, n_name = node
+        cursor.execute("SELECT key, value FROM properties WHERE target_type = 'NODE' AND target_id = ?", (n_id,))
+        props = [{"key": k, "value": v} for k, v in cursor.fetchall()]
+        
+        return {"uid": uid, "label": n_label, "display_name": n_name, "properties": props}
 
     def upsert_lore(self, target_uid: str, key: str, value: str):
         cursor = self.conn.cursor()
