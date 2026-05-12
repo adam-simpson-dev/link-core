@@ -20,30 +20,49 @@ class LinkCore:
     via a dynamic Tool Dispatcher.
     """
     def __init__(self):
-        self.db = DatabaseManager()
-        self.hass = HassClient()
+        self.state = "NOMINAL"
+        self.last_error = None
+        self.error_streak = 0
         self.history = []
 
-        # Mapping JSON Tool names (from tools.py) to internal Python methods
-        self.dispatch_map = {
-            "get_context": self.db.get_relevant_context,
-            "update_memory": self.db.upsert_lore,
-            "control_home": self.handle_home_control,
-            "read_document": self.handle_read_document,
-            "delete_node": self.db.delete_node
-        }
-        logging.info("[*] LINK-CORE Dispatcher Active. Systems Nominal.")
+        try:
+            self.db = DatabaseManager()
+            self.hass = HassClient()
+            # Map JSON tool names to their handler functions for dynamic dispatching
+            self.dispatch_map = {
+                "get_context": self.db.get_relevant_context,
+                "update_memory": self.db.upsert_lore,
+                "control_home": self.handle_home_control,
+                "read_document": self.handle_read_document,
+                "delete_node": self.db.delete_node
+            }
+            logging.info("[*] LINK-CORE Dispatcher Active. Systems Nominal.")
+        except Exception as e:
+            # Catch boot failures (e.g., corrupted DB, missing ENV vars)
+            self.trip_breaker(f"Boot sequence failed: {str(e)}")
+
+    def trip_breaker(self, reason: str):
+        """Locks the core to prevent cascading failures or crash loops."""
+        self.state = "SAFE_MODE"
+        self.last_error = reason
+        logging.critical(f"[!] CIRCUIT BREAKER TRIPPED. System Locked. Reason: {reason}")
 
     def process_tool_call(self, tool_name, arguments, override=False):
+        # Check System State before processing any tool calls to prevent damage or infinite loops.
+        if self.state == "SAFE_MODE":
+            return {
+                "status": "system_locked",
+                "message": f"Core is in SAFE MODE. Reason: {self.last_error}. Manual intervention required."
+            }
+
         schema = get_tool_schema(tool_name)
-        
+        # If the tool is unregistered, we return an error immediately to avoid silent failures or unintended consequences.
         if not schema:
             logging.warning(f"[!] Attempted to call unregistered tool: {tool_name}")
             return {"status": "error", "message": f"Tool {tool_name} not found."}
 
-        # THE CIRCUIT BREAKER: If the tool is marked as high-risk and override is not True, block execution.
+        # Check Security Handshake if the tool requires confirmation and override is not set
         if schema.get("requires_confirmation", False) and not override:
-            logging.warning(f"[!] CRITICAL: Tool '{tool_name}' intercepted. Awaiting manual override.")
             return {
                 "status": "pending_authorization",
                 "tool_name": tool_name,
@@ -51,15 +70,25 @@ class LinkCore:
                 "message": f"Execution of {tool_name} requires explicit human confirmation."
             }
 
+        # Execution & Monitoring
         handler = self.dispatch_map.get(tool_name)
         if handler:
-            self.history.append({"tool": tool_name, "args": arguments})
-            logging.info(f"[*] Dispatching Tool: {tool_name} | Override: {override}")
+            try:
+                result = handler(**arguments)
+                self.error_streak = 0  # Reset streak on success
+                self.history.append({"tool": tool_name, "args": arguments})
+                logging.info(f"[*] Dispatching Tool: {tool_name} | Override: {override}")
+                return {"status": "executed", "data": result}
             
-            return {
-                "status": "executed", 
-                "data": handler(**arguments)
-            }
+            except Exception as e:
+                self.error_streak += 1
+                logging.error(f"[!] Tool execution failed: {str(e)}")
+                
+                # If a tool fails 3 times in a row, kill the autonomous capability
+                if self.error_streak >= 3:
+                    self.trip_breaker(f"Consecutive tool failures exceeded limit. Last error: {str(e)}")
+                
+                return {"status": "error", "message": f"Execution failed: {str(e)}"}
         
         return {"status": "error", "message": "Handler missing for registered tool."}
 
