@@ -107,19 +107,25 @@ class LinkCore:
                 
                 logging.info(f"[*] AI executing tool: {t_name} with args {t_args}")
                 
+                # Log the AI's request before executing
+                self.history.history.append({
+                    "role": "model",
+                    "tool_name": t_name,
+                    "arguments": t_args
+                })
+                
                 # Execute locally
                 result = self.process_tool_call(t_name, t_args)
                 
-                # Format the observation for the history so the AI can read it on the next loop
+                # Format the observation
                 obs_data = result.get("data", result.get("message", "Executed."))
                 
-                # Append to memory with special flags so format_history() catches it
-                msg_entry = {
+                # Log the system's observation
+                self.history.history.append({
                     "role": "system", 
                     "tool_name": t_name, 
                     "content": str(obs_data)
-                }
-                self.history.history.append(msg_entry) 
+                })
                 
                 # Loop repeats. The AI will now see the system observation and decide the next step.
 

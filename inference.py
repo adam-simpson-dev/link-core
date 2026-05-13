@@ -20,17 +20,26 @@ class InferenceEngine:
             })
 
     def format_history(self, internal_history):
-        """Translates the memory queue into Gemini's exact message structure."""
         formatted = []
         for msg in internal_history:
-            # We filter out system/dev console logs so the LLM only sees the active conversation
+            # Standard text interaction
             if msg.get("role") in ["user", "model"] and msg.get("content"):
-                formatted.append({"role": msg["role"], "parts": [{"text": msg.get("content")}]})
+                formatted.append({"role": msg.get("role"), "parts": [{"text": msg.get("content")}]})
             
-            # Formatting the tool execution results for Gemini's context window
+            # The Model requesting a tool
+            elif msg.get("role") == "model" and msg.get("tool_name"):
+                formatted.append({
+                    "role": "model",
+                    "parts": [{"function_call": {
+                        "name": msg.get("tool_name"),
+                        "args": msg.get("arguments", {})
+                    }}]
+                })
+                
+            # The System providing the observation
             elif msg.get("role") == "system" and msg.get("tool_name"):
                 formatted.append({
-                    "role": "function",
+                    "role": "function", 
                     "parts": [{"function_response": {
                         "name": msg.get("tool_name"),
                         "response": {"result": msg.get("content")}
