@@ -205,18 +205,31 @@ class DatabaseManager:
     def batch_update_lore(self, entities: list, relationships: list = None):
         """Processes a bulk JSON payload from the LLM."""
         log = []
+        cursor = self.conn.cursor()        
+
         for entity in entities:
             uid = entity.get("uid")
+            
+            # First create the node if it doesn't exist
+            cursor.execute("SELECT id FROM nodes WHERE uid = ?", (uid,))
+            if not cursor.fetchone():
+                display_name = uid.replace("_", " ").title()
+                # Create the naked node
+                cursor.execute("INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", (uid, "Entity", display_name))
+                self.conn.commit()
+            
+            # Now process properties if they are attached 
             props = entity.get("properties", {})
             for key, value in props.items():
                 self.upsert_lore(uid, key, str(value))
+                
             log.append(uid)
             
         if relationships:
             for rel in relationships:
                 self.create_relationship(rel.get("source_uid"), rel.get("target_uid"), rel.get("relationship"))
                 
-        return f"Batch processed {len(entities)} entities and {len(relationships or [])} relationships. Processed UIDs: {', '.join(log)}"
+        return f"Batch processed {len(entities)} entities. UIDs: {', '.join(log)}"
 
     def close(self):
         self.conn.close()
