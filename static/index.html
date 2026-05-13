@@ -8,6 +8,8 @@
         #left-panel { left: 10px; width: 300px; }
         #right-panel { right: 10px; width: 280px; }
         
+        #terminal-panel { bottom: 20px; left: 50%; transform: translateX(-50%); width: 600px; }
+
         .box { 
             background: rgba(0, 15, 25, 0.85); 
             border: 1px solid #00ffff; 
@@ -20,6 +22,16 @@
         .prop-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0,255,255,0.2); padding: 4px 0;}
         .prop-key { color: #88ffff; }
         .prop-val { color: #ffffff; text-align: right;}
+
+        #chat-log { max-height: 180px; overflow-y: auto; margin-bottom: 10px; font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; scrollbar-color: #00ffff rgba(0,0,0,0.5); }
+        .msg-user { color: #ffffff; text-align: left; opacity: 0.8; }
+        .msg-ai { color: #00ffff; text-align: left; text-shadow: 0 0 5px #00ffff; }
+        .msg-sys { color: #ff0044; text-align: center; font-weight: bold; }
+        
+        #chat-input-wrapper { display: flex; align-items: center; border-top: 1px solid rgba(0,255,255,0.3); padding-top: 10px; }
+        #chat-input-wrapper span { color: #00ffff; margin-right: 10px; font-weight: bold; }
+        #chat-input { background: transparent; border: none; color: #00ffff; font-family: monospace; font-size: 14px; flex-grow: 1; outline: none; }
+        #chat-input::placeholder { color: rgba(0, 255, 255, 0.3); }
     </style>
 </head>
 <body>
@@ -39,6 +51,19 @@
             <h2 id="inspect-name">NODE</h2>
             <div style="font-size: 10px; color: #888; margin-bottom: 10px;" id="inspect-uid"></div>
             <div id="inspect-props"></div>
+        </div>
+    </div>
+
+    <div class="ui-panel" id="terminal-panel">
+        <div class="box">
+            <h2>Uplink Terminal</h2>
+            <div id="chat-log">
+                <div class="msg-sys">AWAITING INPUT...</div>
+            </div>
+            <div id="chat-input-wrapper">
+                <span>></span>
+                <input type="text" id="chat-input" placeholder="Execute command or query LORE..." autocomplete="off">
+            </div>
         </div>
     </div>
     
@@ -147,7 +172,7 @@
             });
         }
 
-        // --- Fetch & Telemetry logic remains identical ---
+        // --- Fetch & Telemetry logic ---
         async function fetchNodeData(uid) {
             try {
                 const res = await fetch(`/api/node/${uid}`);
@@ -168,6 +193,7 @@
             } catch (e) { console.error("Inspection failed", e); }
         }
 
+        // --- SYNCHRONIZATION & TELEMETRY ---
         let currentGraphHash = "";
 
         async function syncGraph() {
@@ -215,12 +241,63 @@
                     triggerSequentialPulse(data.active_nodes);
                 }
                 
-                // Add the sync trigger here
                 syncGraph();
-                
             } catch (e) {}
         }
         setInterval(updateTelemetry, 2000);
+
+        // --- UPLINK TERMINAL LOGIC ---
+        const chatInput = document.getElementById('chat-input');
+        const chatLog = document.getElementById('chat-log');
+
+        function appendMessage(role, text) {
+            const msgDiv = document.createElement('div');
+            
+            if (role === 'user') {
+                msgDiv.className = 'msg-user';
+                msgDiv.innerText = `USER: ${text}`;
+            } else if (role === 'ai') {
+                msgDiv.className = 'msg-ai';
+                msgDiv.innerText = `CORE: ${text}`; // innerText strictly enforces raw text output
+            } else {
+                msgDiv.className = 'msg-sys';
+                msgDiv.innerText = text;
+            }
+            
+            chatLog.appendChild(msgDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        chatInput.addEventListener('keypress', async function (e) {
+            if (e.key === 'Enter' && this.value.trim() !== '') {
+                const text = this.value.trim();
+                this.value = ''; 
+                
+                appendMessage('user', text);
+                
+                // Remove the "Awaiting Input" placeholder if it exists
+                const sysMsg = chatLog.querySelector('.msg-sys');
+                if (sysMsg) sysMsg.remove();
+
+                try {
+                    const res = await fetch('/api/interact', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: text })
+                    });
+                    
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        appendMessage('ai', data.result);
+                    } else {
+                        appendMessage('sys', `[ERROR] ${data.result}`);
+                    }
+                } catch (err) {
+                    appendMessage('sys', '[FATAL] Link to Cortex lost.');
+                }
+            }
+        });
+
     </script>
 </body>
 </html>
