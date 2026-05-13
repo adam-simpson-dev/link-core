@@ -5,6 +5,7 @@ from brain import MessageHistory, PromptManager
 from database import DatabaseManager
 from hass_client import HassClient
 from tools import get_tool_schema
+from inference import InferenceEngine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,12 +28,13 @@ class LinkCore:
         self.error_streak = 0
         
         # Neural Pathways
-        self.history = MessageHistory(max_turns=10)
+        self.history = MessageHistory(max_turns=20)
         self.brain = PromptManager()
 
         try:
             self.db = DatabaseManager()
             self.hass = HassClient()
+            self.ai = InferenceEngine()
             # Map JSON tool names to their handler functions for dynamic dispatching
             self.dispatch_map = {
                 "get_context": self.db.get_relevant_context,
@@ -68,25 +70,62 @@ class LinkCore:
         }
         
     def process_natural_language(self, user_input: str):
-        """
-        Phase 6, Step 3: The Agentic Loop.
-        Currently compiles context and waits for the LLM bridge.
-        """
+        """The ReAct (Reasoning & Acting) Loop."""
         if self.state == "SAFE_MODE":
-            return {"error": "System locked in SAFE_MODE."}
+            return "System locked in SAFE_MODE."
 
-        # Internal Keyword Extraction (Heuristic for now)
-        keywords = user_input.split()
-        context = self.db.get_relevant_context(keywords)
-
-        # Add message to short-term memory
+        # Log user intent
         self.history.add_message("user", user_input)
-
-        # Compile the Prompt for the future LLM
-        payload = self.brain.compile_payload(user_input, context, self.history.get_context())
         
-        logging.info(f"[*] Prompt Compiled for: {user_input}")
-        return {"status": "ready_for_inference", "payload": payload}
+        iteration = 0
+        max_iterations = 5 # Circuit breaker to prevent infinite loop token drain
+
+        while iteration < max_iterations:
+            iteration += 1
+            
+            # Get intrinsic state
+            sys_prompt = self.brain.get_system_prompt(self.state, self.last_error)
+            
+            # Query the LLM
+            decision = self.ai.think(sys_prompt, self.history.get_context())
+            
+            # Handle Error
+            if decision["type"] == "error":
+                err_msg = f"Inference failure: {decision['content']}"
+                self.history.add_message("system", err_msg)
+                return err_msg
+                
+            # Handle Final Text Response
+            elif decision["type"] == "text":
+                self.history.add_message("model", decision["content"])
+                return decision["content"]
+                
+            # Handle Tool Execution
+            elif decision["type"] == "tool_call":
+                t_name = decision["tool_name"]
+                t_args = decision["arguments"]
+                
+                logging.info(f"[*] AI executing tool: {t_name} with args {t_args}")
+                
+                # Execute locally
+                result = self.process_tool_call(t_name, t_args)
+                
+                # Format the observation for the history so the AI can read it on the next loop
+                obs_data = result.get("data", result.get("message", "Executed."))
+                
+                # Append to memory with special flags so format_history() catches it
+                msg_entry = {
+                    "role": "system", 
+                    "tool_name": t_name, 
+                    "content": str(obs_data)
+                }
+                self.history.history.append(msg_entry) 
+                
+                # Loop repeats. The AI will now see the system observation and decide the next step.
+
+        # If it hits max loops, sever the connection
+        self.trip_breaker("LLM Recursive Loop Detected. Forced termination.")
+        return "Process terminated: Maximum autonomous iterations reached."
 
     def process_tool_call(self, tool_name, arguments, override=False):
         if self.state == "SAFE_MODE":
