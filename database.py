@@ -82,6 +82,18 @@ class DatabaseManager:
                 
         return f"Batch sync complete. Nodes affected: {len(log)}"
 
+    def get_all_nodes(self):
+        """Feeds the WebGL UI node graph."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, label, display_name FROM nodes")
+        return cursor.fetchall()
+
+    def get_all_edges(self):
+        """Feeds the WebGL UI edge graph."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, source_id, target_id, relationship FROM edges")
+        return cursor.fetchall()
+
     def get_relevant_context(self, keywords: list) -> str:
         """Hybrid Semantic Retrieval."""
         if not keywords: return "No context."
