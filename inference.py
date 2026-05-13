@@ -85,5 +85,4 @@ class InferenceEngine:
             return {"type": "text", "content": response.text}
                 
         except Exception as e:
-            logging.error(f"[!] SDK Error: {str(e)}")
             return {"type": "error", "content": str(e)}
