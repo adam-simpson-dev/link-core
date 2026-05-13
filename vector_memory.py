@@ -4,7 +4,7 @@ import os
 
 class VectorManager:
     def __init__(self, path="./chroma_db"):
-        # We use a local, lightweight embedding model (~300MB RAM)
+        # Local embedding model (~300MB RAM)
         self.embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2"
         )
@@ -15,25 +15,12 @@ class VectorManager:
         )
 
     def upsert_node_vector(self, uid, text_content):
-        """Indexes a node's meaning so it can be found semantically."""
-        self.collection.upsert(
-            ids=[uid],
-            documents=[text_content],
-            metadatas=[{"uid": uid}]
-        )
+        self.collection.upsert(ids=[uid], documents=[text_content], metadatas=[{"uid": uid}])
 
     def query_semantic_uids(self, query_text, n_results=5):
-        """Finds the most relevant UIDs based on meaning, not just keywords."""
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=n_results
-        )
-        # Extract the UIDs from metadata
+        results = self.collection.query(query_texts=[query_text], n_results=n_results)
         return [meta['uid'] for meta in results['metadatas'][0]]
 
     def delete_vector(self, uid):
-        """Purge from vector memory."""
-        try:
-            self.collection.delete(ids=[uid])
-        except:
-            pass
+        try: self.collection.delete(ids=[uid])
+        except: pass

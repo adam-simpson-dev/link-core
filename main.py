@@ -71,8 +71,7 @@ class LinkCore:
         
     def process_natural_language(self, user_input: str):
         """The ReAct (Reasoning & Acting) Loop."""
-        if self.state == "SAFE_MODE":
-            return "System locked in SAFE_MODE."
+        if self.state == "SAFE_MODE": return "System locked."
 
         # Log user intent
         self.history.add_message("user", user_input)
@@ -82,86 +81,47 @@ class LinkCore:
 
         while iteration < max_iterations:
             iteration += 1
+            decision = self.ai.think(self.brain.get_system_prompt(self.state, self.last_error), self.history.get_context())
             
-            # Get intrinsic state
-            sys_prompt = self.brain.get_system_prompt(self.state, self.last_error)
-            
-            # Query the LLM
-            decision = self.ai.think(sys_prompt, self.history.get_context())
-            
-            # Handle Error
             if decision["type"] == "error":
-                full_error = decision["content"]
+                logging.error(f"[!] INFERENCE FATAL: {decision['content']}")
+                return "API ERROR. Check core logs."
                 
-                # Write the formatted trace to backend logs
-                logging.error(f"[!] INFERENCE FATAL: {full_error}")
-                
-                # Feed a sanitized, truncated string to the UI and Memory
-                short_msg = "API LIMIT OR CONNECTION FAILURE. See core system logs for trace."
-                self.history.add_message("system", short_msg)
-                return short_msg
-                
-            # Handle Final Text Response
             elif decision["type"] == "text":
                 self.history.add_message("model", decision["content"])
                 return decision["content"]
                 
-            # Handle Tool Execution
             elif decision["type"] == "tool_call":
-                t_name = decision["tool_name"]
-                t_args = decision["arguments"]
+                t_name, t_args = decision["tool_name"], decision["arguments"]
                 
-                logging.info(f"[*] AI executing tool: {t_name} with args {t_args}")
+                # Standardized tool logging
+                self.history.add_message("model", "", tool_calls=[decision])
                 
-                # Log the AI's request before executing
-                self.history.history.append({
-                    "role": "model",
-                    "tool_name": t_name,
-                    "arguments": t_args
-                })
-                
-                # Execute locally
                 result = self.process_tool_call(t_name, t_args)
-                
-                # Format the observation
                 obs_data = result.get("data", result.get("message", "Executed."))
                 
-                # Log the system's observation
-                self.history.history.append({
-                    "role": "system", 
-                    "tool_name": t_name, 
-                    "content": str(obs_data)
-                })
-                
-                # Loop repeats. The AI will now see the system observation and decide the next step.
+                # Feed the observation back into the loop
+                self.history.add_message("system", str(obs_data), tool_results=[{"tool_name": t_name, "content": obs_data}])
 
-        # If it hits max loops, sever the connection
-        self.trip_breaker("LLM Recursive Loop Detected. Forced termination.")
-        return "Process terminated: Maximum autonomous iterations reached."
+        self.trip_breaker("LLM Recursive Loop Detected.")
+        return "Maximum iterations reached."
 
     def process_tool_call(self, tool_name: str, arguments: dict):
-        """Pure execution pipe. Safe Mode & Circuit Breakers remain active."""
         if self.state == "SAFE_MODE":
             return {"status": "system_locked", "message": self.last_error}
 
         handler = self.dispatch_map.get(tool_name)
-        if not handler:
-            return {"status": "error", "message": f"No handler for {tool_name}"}
+        if handler:
+            try:
+                result = handler(**arguments)
+                self.error_streak = 0
+                return {"status": "executed", "data": result}
+            except Exception as e:
+                self.error_streak += 1
+                if self.error_streak >= 3: self.trip_breaker(str(e))
+                return {"status": "error", "message": str(e)}
 
-        try:
-            # Execute directly with unpacked kwargs
-            result = handler(**arguments)
-            self.error_streak = 0 # Reset error streak on success
-            return {"status": "executed", "data": result}
-        except TypeError as e:
-            self.error_streak += 1 # Increment error streak for argument mismatches
-            return {"status": "error", "message": f"Argument mismatch: {str(e)}"}
-        except Exception as e:
-            self.error_streak += 1
-            # Circuit breaker: Trip if we fail 3 times in a row
-            if self.error_streak >= 3: 
-                self.trip_breaker(str(e))
-            return {"status": "error", "message": f"Execution failed: {str(e)}"}
+        return {"status": "error", "message": "No handler."}
 
     # --- Tool Handlers ---
     # These are kept separate from the dispatch map to allow for more complex logic, error handling, or multi-step processes that might be required for certain tools.

@@ -106,11 +106,9 @@ class DatabaseManager:
 
         # Semantic Search (The Brain)
         # Finds nodes related to the *meaning* of the keywords
-        semantic_uids = self.vector.query_semantic_uids(query_string)
-        uids.update(semantic_uids)
+        uids.update(self.vector.query_semantic_uids(query_string))
 
-        # Keyword Fallback (The Filter)
-        # Ensures exact matches (like serial numbers or specific names) aren't missed
+        # Keyword Fallback (Exact matches)
         cursor = self.conn.cursor()
         for kw in keywords:
             like_kw = f"%{kw}%"
@@ -137,23 +135,27 @@ class DatabaseManager:
         return {"uid": uid, "label": n_label, "display_name": n_name, "properties": props}
 
     def upsert_lore(self, target_uid, key, value):
-        """Updates SQLite and then refreshes the Vector index."""
+        """Unified property setter for both SQLite and ChromaDB."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        node_row = cursor.fetchone()
+        res = cursor.fetchone()
         
-        if not node_row: return f"Node {target_uid} not found."
-        
-        # Standard SQLite update
-        cursor.execute("INSERT OR REPLACE INTO properties (target_id, key, value) VALUES (?, ?, ?)",
-                       (node_row[0], key, value))
+        if not res:
+            # Auto-create node if missing
+            display_name = target_uid.replace("_", " ").title()
+            cursor.execute("INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", 
+                           (target_uid, "Entity", display_name))
+            n_id = cursor.lastrowid
+        else:
+            n_id = res[0]
+
+        cursor.execute("INSERT OR REPLACE INTO properties (target_type, target_id, key, value) VALUES (?, ?, ?, ?)", 
+                       (target_type, n_id, key, value))
         self.conn.commit()
         
-        # VECTOR SYNC: We re-index the entire node's state so it's semantically searchable
-        full_context = self.get_node_context(target_uid)
-        self.vector.upsert_node_vector(target_uid, full_context)
-        
-        return f"Property {key} updated for {target_uid}."
+        # Refreshes the semantic index for this node
+        self.vector.upsert_node_vector(target_uid, self.get_node_context(target_uid))
+        return f"Updated {target_uid}: {key}={value}"
 
     def create_relationship(self, source_uid, target_uid, relationship):
         cursor = self.conn.cursor()
@@ -179,11 +181,9 @@ class DatabaseManager:
     def delete_node(self, uid: str):
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM nodes WHERE uid = ?", (uid,))
-        if cursor.rowcount == 0:
-            return f"Node '{uid}' not found."
-            
         self.conn.commit()
-        return f"Deleted {uid} and all it's connected edges."
+        self.vector.delete_vector(uid) # Sync delete
+        return f"Deleted {uid} from SQL and Vector memory."
 
     def wipe_database(self, confirm_wipe: bool = False):
         """Erases all data and resets auto-increment counters. Schema remains intact."""
@@ -201,7 +201,7 @@ class DatabaseManager:
         return "CRITICAL: The LORE graph has been completely wiped."
 
     def batch_update_lore(self, entities: list = None, relationships: list = None):
-        """Processes a bulk JSON payload. Now supports relationship-only updates."""
+        """Processes a bulk JSON payload to create/update multiple nodes and edges in one operation."""
         log = []
         cursor = self.conn.cursor()
         
