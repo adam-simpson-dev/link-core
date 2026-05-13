@@ -113,6 +113,48 @@ class DatabaseManager:
         self.last_accessed_uids = list(uids)
         return "\n".join([self.get_node_context(u) for u in uids]) if uids else "Empty LORE."
 
+    def get_node_data(self, uid: str) -> dict:
+        """Feeds the frontend GUI Inspector panel."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, display_name, label FROM nodes WHERE uid = ?", (uid,))
+        node = cursor.fetchone()
+        
+        if not node:
+            return {"error": f"Node {uid} not found"}
+            
+        n_id, display_name, label = node
+        
+        # Fetch Properties
+        cursor.execute("SELECT key, value FROM properties WHERE target_id = ? AND target_type = 'NODE'", (n_id,))
+        properties = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        # Fetch Outgoing Edges
+        cursor.execute("""
+            SELECT e.relationship, n.uid, n.display_name 
+            FROM edges e 
+            JOIN nodes n ON e.target_id = n.id 
+            WHERE e.source_id = ?
+        """, (n_id,))
+        outgoing = [{"relationship": row[0], "target_uid": row[1], "target_name": row[2]} for row in cursor.fetchall()]
+        
+        # Fetch Incoming Edges
+        cursor.execute("""
+            SELECT e.relationship, n.uid, n.display_name 
+            FROM edges e 
+            JOIN nodes n ON e.source_id = n.id 
+            WHERE e.target_id = ?
+        """, (n_id,))
+        incoming = [{"relationship": row[0], "source_uid": row[1], "source_name": row[2]} for row in cursor.fetchall()]
+        
+        return {
+            "uid": uid,
+            "display_name": display_name,
+            "label": label,
+            "properties": properties,
+            "outgoing_edges": outgoing,
+            "incoming_edges": incoming
+        }
+
     def get_node_context(self, uid: str) -> str:
         cursor = self.conn.cursor()
         cursor.execute("SELECT id, display_name FROM nodes WHERE uid = ?", (uid,))
