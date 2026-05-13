@@ -205,34 +205,32 @@ class DatabaseManager:
         self.last_accessed_uids.clear() # Clear the UI telemetry buffer
         return "CRITICAL: The LORE graph has been completely wiped."
 
-    def batch_update_lore(self, entities: list, relationships: list = None):
-        """Processes a bulk JSON payload from the LLM."""
+    def batch_update_lore(self, entities: list = None, relationships: list = None):
+        """Processes a bulk JSON payload. Now supports relationship-only updates."""
         log = []
-        cursor = self.conn.cursor()        
-
-        for entity in entities:
-            uid = entity.get("uid")
-            
-            # First create the node if it doesn't exist
-            cursor.execute("SELECT id FROM nodes WHERE uid = ?", (uid,))
-            if not cursor.fetchone():
-                display_name = uid.replace("_", " ").title()
-                # Create the naked node
-                cursor.execute("INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", (uid, "Entity", display_name))
-                self.conn.commit()
-            
-            # Now process properties if they are attached 
-            props = entity.get("properties", {})
-            for key, value in props.items():
-                self.upsert_lore(uid, key, str(value))
+        cursor = self.conn.cursor()
+        
+        # Handle entities if provided
+        if entities:
+            for entity in entities:
+                uid = entity.get("uid")
+                cursor.execute("SELECT id FROM nodes WHERE uid = ?", (uid,))
+                if not cursor.fetchone():
+                    display_name = uid.replace("_", " ").title()
+                    cursor.execute("INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", (uid, "Entity", display_name))
+                    self.conn.commit()
                 
-            log.append(uid)
+                props = entity.get("properties", {})
+                for key, value in props.items():
+                    self.upsert_lore(uid, key, str(value))
+                log.append(uid)
             
+        # Handle relationships if provided
         if relationships:
             for rel in relationships:
                 self.create_relationship(rel.get("source_uid"), rel.get("target_uid"), rel.get("relationship"))
                 
-        return f"Batch processed {len(entities)} entities. UIDs: {', '.join(log)}"
+        return f"Batch processed. Entities: {len(entities or [])}, Rel: {len(relationships or [])}"
 
     def close(self):
         self.conn.close()

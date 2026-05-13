@@ -47,6 +47,14 @@ class InferenceEngine:
                 })
         return formatted
 
+    def _unpack_protobuf(self, obj):
+        """Recursively converts Google Protobuf composites to native Python dicts/lists."""
+        if hasattr(obj, 'items'):
+            return {k: self._unpack_protobuf(v) for k, v in obj.items()}
+        elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
+            return [self._unpack_protobuf(v) for v in obj]
+        return obj
+
     def think(self, system_prompt: str, history: list):
         """The cognitive bridge. Sends the state and waits for a decision."""
         
@@ -62,22 +70,20 @@ class InferenceEngine:
         
         try:
             response = model.generate_content(gemini_history)
+            
+            # Use a generator to find the first part that contains a function call
+            func_call = next((p.function_call for p in response.parts if p.function_call), None)
 
-            if response.parts and response.parts[0].function_call:
-                fc = response.parts[0].function_call
+            if func_call:
+                return {
+                    "type": "tool_call", 
+                    "tool_name": func_call.name, 
+                    "arguments": self._unpack_protobuf(func_call.args)
+                }
                 
-                # Recursively strip Google Protobuf wrappers into native Python
-                def unpack(obj):
-                    if hasattr(obj, 'items'):
-                        return {k: unpack(v) for k, v in obj.items()}
-                    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
-                        return [unpack(v) for v in obj]
-                    return obj
-
-                args = unpack(fc.args)
-                return {"type": "tool_call", "tool_name": fc.name, "arguments": args}
-            else:
-                return {"type": "text", "content": response.text}
+            # Only access .text if no function call was found
+            return {"type": "text", "content": response.text}
                 
         except Exception as e:
+            logging.error(f"[!] SDK Error: {str(e)}")
             return {"type": "error", "content": str(e)}

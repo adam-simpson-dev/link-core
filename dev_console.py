@@ -36,7 +36,7 @@ def main():
             if result_data.get("status") == "executed":
                 print(f"[*] Result:\n{result_data.get('data')}")
             else:
-                print(json.dumps(response, indent=2))
+                print(f"[!] Error: {result_data.get('message', 'Unknown failure')}")
             
         except Exception as e:
             print(f"[!] Input Error: {e}. Format: tool_name {{'arg': 'val'}}")
