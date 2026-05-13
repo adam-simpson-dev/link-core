@@ -143,20 +143,19 @@ class LinkCore:
         if self.state == "SAFE_MODE":
             return {"status": "system_locked", "message": self.last_error}
 
-        schema = get_tool_schema(tool_name)
-        if schema.get("requires_confirmation", False) and not override:
-            return {"status": "pending_authorization", "message": f"Confirm {tool_name}."}
-
         handler = self.dispatch_map.get(tool_name)
         if handler:
             try:
                 result = handler(**arguments)
                 self.error_streak = 0 # Reset error streak on success
                 return {"status": "executed", "data": result}
+            except TypeError as e:
+                self.error_streak += 1
+                return {"status": "error", "message": f"Argument mismatch: {str(e)}"}
             except Exception as e:
                 self.error_streak += 1
-                if self.error_streak >= 3: self.trip_breaker(str(e))   # Trip breaker after 3 consecutive errors
-                return {"status": "error", "message": str(e)}
+                if self.error_streak >= 3: self.trip_breaker(str(e)) # Trip the breaker after 3 consecutive errors
+                return {"status": "error", "message": f"Execution failed: {str(e)}"}
 
         return {"status": "error", "message": "No handler."}
 
