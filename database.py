@@ -138,5 +138,41 @@ class DatabaseManager:
         self.conn.commit()
         return f"Link created: {source_uid} -> {relationship} -> {target_uid}"
     
+    def delete_node(self, uid: str):
+        """Standardized deletion for SQLite and Vector memory."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM nodes WHERE uid = ?", (uid,))
+        if cursor.rowcount == 0:
+            return f"Node '{uid}' not found."
+            
+        self.conn.commit()
+        # Synchronize: Remove the semantic embedding so it doesn't haunt future searches
+        self.vector.delete_vector(uid)
+        return f"Node '{uid}' and all associated LORE permanently purged."
+
+    def wipe_database(self, confirm_wipe: bool = False):
+        """CRITICAL: Full system reset."""
+        if not confirm_wipe:
+            return "Wipe aborted. Confirmation boolean missing."
+
+        cursor = self.conn.cursor()
+        # Clear SQLite
+        cursor.execute("DELETE FROM nodes")
+        cursor.execute("DELETE FROM properties")
+        cursor.execute("DELETE FROM edges")
+        self.conn.commit()
+
+        # Clear ChromaDB Collection
+        # We delete the collection and recreate it to ensure a zero-byte state
+        self.vector.client.delete_collection("lore_vectors")
+        self.vector.collection = self.vector.client.create_collection(
+            name="lore_vectors", 
+            embedding_function=self.vector.embed_fn
+        )
+
+        self.last_accessed_uids.clear()
+        logging.warning("[!] LORE GRAPH AND VECTOR MEMORY WIPED BY USER COMMAND.")
+        return "System memory reset to factory defaults. All nodes and vectors purged."
+
     def close(self):
         self.conn.close()
