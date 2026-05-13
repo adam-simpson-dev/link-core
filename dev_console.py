@@ -7,9 +7,9 @@ load_dotenv()
 # Store the API URL in your environment variable for flexibility and security
 API_URL = os.getenv("CORE_API_URL")
 
-def send_command(tool_name, args, override=False):
+def send_command(tool_name, args):
     """Bridges the physical gap via HTTP."""
-    payload = {"tool_name": tool_name, "arguments": args, "override": override}
+    payload = {"tool_name": tool_name, "arguments": args}
     try:
         response = requests.post(f"{API_URL}/command", json=payload)
         response.raise_for_status()
@@ -28,20 +28,9 @@ def main():
             tool = parts[0]
             args = json.loads(parts[1]) if len(parts) > 1 else {}
             
-            # Initial blind fire
+            # Direct execution
             response = send_command(tool, args)
             result_data = response.get("result", {})
-            
-            # Handle Interception
-            if result_data.get("status") == "pending_authorization":
-                print(f"\n[!] ALERT: {result_data.get('message')}")
-                auth = input(f"Authorize '{tool}'? [Y/N]: ").strip().upper()
-                if auth == 'Y':
-                    response = send_command(tool, args, override=True)
-                    result_data = response.get("result", {})
-                else:
-                    print("[-] Action aborted.")
-                    continue
 
             # Handle Display (Extract the 'data' or show the error)
             if result_data.get("status") == "executed":

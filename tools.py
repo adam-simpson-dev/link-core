@@ -5,7 +5,6 @@ TOOL_SCHEMAS = [
         "name": "get_context",
         "description": "Retrieve information from the LORE graph using specific keywords.",
         "risk_level": "low",
-        "requires_confirmation": False,
         "parameters": {
             "type": "object",
             "properties": {"keywords": {"type": "array", "items": {"type": "string"}}},
@@ -16,7 +15,6 @@ TOOL_SCHEMAS = [
         "name": "update_memory",
         "description": "Updates or adds a specific trait or preference for a person or object in the home database.",
         "risk_level": "moderate",
-        "requires_confirmation": False,
         "parameters": {
             "type": "object",
             "properties": {
@@ -40,7 +38,6 @@ TOOL_SCHEMAS = [
         "name": "create_link",
         "description": "Establishes a relationship between two existing entities in LORE.",
         "risk_level": "low",
-        "requires_confirmation": False,
         "parameters": {
             "type": "object",
             "properties": {
@@ -55,7 +52,6 @@ TOOL_SCHEMAS = [
         "name": "control_home",
         "description": "Triggers an action in the smart home via Home Assistant.",
         "risk_level": "low",
-        "requires_confirmation": False,
         "parameters": {
             "type": "object",
             "properties": {
@@ -95,7 +91,6 @@ TOOL_SCHEMAS = [
         "name": "read_document",
         "description": "Reads the text content of a local file (markdown, txt, or json) to gather deep project lore or complex instructions.",
         "risk_level": "low",
-        "requires_confirmation": False,
         "parameters": {
             "type": "object",
             "properties": {
@@ -109,33 +104,20 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "delete_node",
-        "description": "Permanently erase an entity and its relationships from LORE.",
-        "risk_level": "critical",
-        "requires_confirmation": True,
-        "parameters": {
-            "type": "object",
-            "properties": {"uid": {"type": "string"}},
-            "required": ["uid"]
-        }
-    },
-    {
-        "name": "wipe_database",
-        "description": "Completely erases all nodes, properties, and relationships in the LORE graph. Use only when a total reset is requested.",
-        "risk_level": "critical",
-        "requires_confirmation": True,
+        "description": "Permanently removes a single node and its edges. Use strictly as a last resort.",
+        "risk_level": "high",
         "parameters": {
             "type": "object",
             "properties": {
-                "confirm_wipe": {"type": "boolean", "description": "Must be set to true to execute."}
+                "uid": {"type": "string", "description": "The exact UID of the node to delete."}
             },
-            "required": ["confirm_wipe"]
+            "required": ["uid"]
         }
     },
     {
         "name": "batch_update_lore",
         "description": "Creates multiple nodes, properties, and relationships in a single transaction. Highly efficient for mass data ingestion.",
         "risk_level": "medium",
-        "requires_confirmation": False,
         "parameters": {
             "type": "object",
             "properties": {

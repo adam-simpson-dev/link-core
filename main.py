@@ -91,9 +91,15 @@ class LinkCore:
             
             # Handle Error
             if decision["type"] == "error":
-                err_msg = f"Inference failure: {decision['content']}"
-                self.history.add_message("system", err_msg)
-                return err_msg
+                full_error = decision["content"]
+                
+                # Write the formatted trace to backend logs
+                logging.error(f"[!] INFERENCE FATAL: {full_error}")
+                
+                # Feed a sanitized, truncated string to the UI and Memory
+                short_msg = "API LIMIT OR CONNECTION FAILURE. See core system logs for trace."
+                self.history.add_message("system", short_msg)
+                return short_msg
                 
             # Handle Final Text Response
             elif decision["type"] == "text":
@@ -133,13 +139,9 @@ class LinkCore:
         self.trip_breaker("LLM Recursive Loop Detected. Forced termination.")
         return "Process terminated: Maximum autonomous iterations reached."
 
-    def process_tool_call(self, tool_name, arguments, override=False):
+    def process_tool_call(self, tool_name: str, arguments: dict):
         if self.state == "SAFE_MODE":
             return {"status": "system_locked", "message": self.last_error}
-
-        schema = get_tool_schema(tool_name)
-        if schema.get("requires_confirmation", False) and not override:
-            return {"status": "pending_authorization", "message": f"Confirm {tool_name}."}
 
         handler = self.dispatch_map.get(tool_name)
         if handler:
@@ -147,10 +149,13 @@ class LinkCore:
                 result = handler(**arguments)
                 self.error_streak = 0 # Reset error streak on success
                 return {"status": "executed", "data": result}
+            except TypeError as e:
+                self.error_streak += 1
+                return {"status": "error", "message": f"Argument mismatch: {str(e)}"}
             except Exception as e:
                 self.error_streak += 1
-                if self.error_streak >= 3: self.trip_breaker(str(e))   # Trip breaker after 3 consecutive errors
-                return {"status": "error", "message": str(e)}
+                if self.error_streak >= 3: self.trip_breaker(str(e)) # Trip the breaker after 3 consecutive errors
+                return {"status": "error", "message": f"Execution failed: {str(e)}"}
 
         return {"status": "error", "message": "No handler."}
 

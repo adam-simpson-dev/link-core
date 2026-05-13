@@ -34,7 +34,6 @@ core = LinkCore()
 class CommandRequest(BaseModel):
     tool_name: str
     arguments: dict
-    override: bool = False
 
 class ChatRequest(BaseModel):
     text: str
@@ -75,7 +74,7 @@ async def get_graph():
 
 @app.post("/command")
 async def execute_command(call: CommandRequest):
-    result = core.process_tool_call(call.tool_name, call.arguments, override=call.override)
+    result = core.process_tool_call(call.tool_name, call.arguments)
     return {"status": "success", "result": result}
 
 @app.post("/api/interact")
