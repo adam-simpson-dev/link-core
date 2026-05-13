@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from vector_memory import VectorManager
 
 class DatabaseManager:
     """
@@ -12,6 +13,7 @@ class DatabaseManager:
         # CRITICAL: SQLite does not enforce foreign keys by default.
         self.conn.execute("PRAGMA foreign_keys = ON;")
         self.last_accessed_uids = [] # Tracking data wake in GUI
+        self.vector = VectorManager() # Initialize ChromaDB
         self.initialize_schema()
 
     def initialize_schema(self):
@@ -96,42 +98,30 @@ class DatabaseManager:
         return " | ".join(context)
 
     def get_relevant_context(self, keywords: list) -> str:
-        if not keywords: 
-            return "No keywords provided."
+        """Hybrid Search: Merges Keyword matching with Semantic Vector search."""
+        if not keywords: return "No keywords provided."
             
-        cursor = self.conn.cursor()
-        uids = set() # Use a set to prevent duplicate pings on the same node
+        uids = set()
+        query_string = " ".join(keywords)
 
+        # Semantic Search (The Brain)
+        # Finds nodes related to the *meaning* of the keywords
+        semantic_uids = self.vector.query_semantic_uids(query_string)
+        uids.update(semantic_uids)
+
+        # Keyword Fallback (The Filter)
+        # Ensures exact matches (like serial numbers or specific names) aren't missed
+        cursor = self.conn.cursor()
         for kw in keywords:
             like_kw = f"%{kw}%"
-            
-            # Search Node Names
-            cursor.execute("SELECT uid FROM nodes WHERE uid LIKE ? OR label LIKE ? OR display_name LIKE ?", (like_kw, like_kw, like_kw))
-            uids.update([row[0] for row in cursor.fetchall()])
-            
-            # Search Properties
-            cursor.execute("""
-                SELECT n.uid FROM properties p 
-                JOIN nodes n ON p.target_id = n.id 
-                WHERE p.value LIKE ? OR p.key LIKE ?
-            """, (like_kw, like_kw))
+            cursor.execute("SELECT uid FROM nodes WHERE uid LIKE ? OR display_name LIKE ?", (like_kw, like_kw))
             uids.update([row[0] for row in cursor.fetchall()])
 
-            # Search Edges
-            # If a link is found, we want BOTH connected nodes to light up
-            cursor.execute("""
-                SELECT n1.uid, n2.uid FROM edges e
-                JOIN nodes n1 ON e.source_id = n1.id
-                JOIN nodes n2 ON e.target_id = n2.id
-                WHERE e.relationship LIKE ?
-            """, (like_kw,))
-            for row in cursor.fetchall():
-                uids.update([row[0], row[1]])
-
-        # Update the telemetry tracker for the 3D Radar Pings
+        # Log for UI telemetry
         self.last_accessed_uids = list(uids)
         
-        return "\n".join([self.get_node_context(u) for u in uids]) if uids else "No lore found."
+        # Construct final lore payload
+        return "\n".join([self.get_node_context(u) for u in uids]) if uids else "No relevant LORE found."
 
     def get_node_data(self, uid: str):
         """Fetches structured JSON data for the UI Inspector."""
@@ -146,19 +136,24 @@ class DatabaseManager:
         
         return {"uid": uid, "label": n_label, "display_name": n_name, "properties": props}
 
-    def upsert_lore(self, target_uid: str, key: str, value: str):
+    def upsert_lore(self, target_uid, key, value):
+        """Updates SQLite and then refreshes the Vector index."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        res = cursor.fetchone()
-        if not res:
-            display_name = target_uid.replace("_", " ").title()
-            cursor.execute("INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", (target_uid, "Entity", display_name))
-            n_id = cursor.lastrowid
-        else:
-            n_id = res[0]
-        cursor.execute("INSERT OR REPLACE INTO properties (target_type, target_id, key, value) VALUES ('NODE', ?, ?, ?)", (n_id, key, value))
+        node_row = cursor.fetchone()
+        
+        if not node_row: return f"Node {target_uid} not found."
+        
+        # Standard SQLite update
+        cursor.execute("INSERT OR REPLACE INTO properties (target_id, key, value) VALUES (?, ?, ?)",
+                       (node_row[0], key, value))
         self.conn.commit()
-        return f"Updated {target_uid}: {key}={value}"
+        
+        # VECTOR SYNC: We re-index the entire node's state so it's semantically searchable
+        full_context = self.get_node_context(target_uid)
+        self.vector.upsert_node_vector(target_uid, full_context)
+        
+        return f"Property {key} updated for {target_uid}."
 
     def create_relationship(self, source_uid, target_uid, relationship):
         cursor = self.conn.cursor()

@@ -179,5 +179,7 @@ class LinkCore:
         return self.hass.call_service(domain, service, service_data)
 
     def shutdown(self):
-        self.db.close()
-        logging.info("[*] LINK-CORE Offline.")
+        """Graceful termination of database links."""
+        logging.info("[!] LINK-CORE Shutting down.")
+        if hasattr(self, 'db'):
+            self.db.close()
