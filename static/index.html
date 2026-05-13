@@ -51,12 +51,11 @@
         const elem = document.getElementById('3d-graph');
         const meshRegistry = {}; 
         
-        // Define our TRON color palette globally for the Lerp function
+        // Define our color palette globally for the Lerp function
         const baseColor = new THREE.Color(0x0088ff); // Deep glowing blue
         const flashColor = new THREE.Color(0xffffff); // Pure white
 
         const Graph = ForceGraph3D()(elem)
-            .jsonUrl('/api/graph')
             .nodeLabel('name')
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
@@ -169,6 +168,29 @@
             } catch (e) { console.error("Inspection failed", e); }
         }
 
+        let currentGraphHash = "";
+
+        async function syncGraph() {
+            try {
+                const res = await fetch('/api/graph');
+                const data = await res.json();
+                
+                // Fast string comparison to detect structural or property changes
+                const newHash = JSON.stringify(data);
+                
+                if (newHash !== currentGraphHash) {
+                    currentGraphHash = newHash;
+                    // Push delta to the engine. D3 handles the spatial interpolation.
+                    Graph.graphData(data);
+                }
+            } catch (e) {
+                // Fails silently to prevent console spam
+            }
+        }
+
+        // Run immediately on boot
+        syncGraph();
+
         async function updateTelemetry() {
             try {
                 const res = await fetch('/api/telemetry');
@@ -192,6 +214,10 @@
                 if (data.active_nodes && data.active_nodes.length > 0) {
                     triggerSequentialPulse(data.active_nodes);
                 }
+                
+                // Add the sync trigger here
+                syncGraph();
+                
             } catch (e) {}
         }
         setInterval(updateTelemetry, 2000);
