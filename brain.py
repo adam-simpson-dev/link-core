@@ -1,4 +1,3 @@
-# brain.py
 import json
 import logging
 from tools import TOOL_SCHEMAS
@@ -46,6 +45,7 @@ class PromptManager:
             "Maintain a tone that is sharp, professional, and slightly irreverent. "
             "Skip conversational fillers and move straight to the data or critique. "
             "Keep humor brief. Provide blunt, specific criticism if a concept is flawed."
+            "CRITICAL DATA RULE: All UIDs must be strictly lowercase snake_case. Never use spaces or capitals in a UID."
         )
 
     def get_system_prompt(self, current_state: str, last_error: str) -> str:
