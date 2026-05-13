@@ -140,24 +140,28 @@ class LinkCore:
         return "Process terminated: Maximum autonomous iterations reached."
 
     def process_tool_call(self, tool_name: str, arguments: dict):
+        """Pure execution pipe. Safe Mode & Circuit Breakers remain active."""
         if self.state == "SAFE_MODE":
             return {"status": "system_locked", "message": self.last_error}
 
         handler = self.dispatch_map.get(tool_name)
-        if handler:
-            try:
-                result = handler(**arguments)
-                self.error_streak = 0 # Reset error streak on success
-                return {"status": "executed", "data": result}
-            except TypeError as e:
-                self.error_streak += 1
-                return {"status": "error", "message": f"Argument mismatch: {str(e)}"}
-            except Exception as e:
-                self.error_streak += 1
-                if self.error_streak >= 3: self.trip_breaker(str(e)) # Trip the breaker after 3 consecutive errors
-                return {"status": "error", "message": f"Execution failed: {str(e)}"}
+        if not handler:
+            return {"status": "error", "message": f"No handler for {tool_name}"}
 
-        return {"status": "error", "message": "No handler."}
+        try:
+            # Execute directly with unpacked kwargs
+            result = handler(**arguments)
+            self.error_streak = 0 # Reset error streak on success
+            return {"status": "executed", "data": result}
+        except TypeError as e:
+            self.error_streak += 1 # Increment error streak for argument mismatches
+            return {"status": "error", "message": f"Argument mismatch: {str(e)}"}
+        except Exception as e:
+            self.error_streak += 1
+            # Circuit breaker: Trip if we fail 3 times in a row
+            if self.error_streak >= 3: 
+                self.trip_breaker(str(e))
+            return {"status": "error", "message": f"Execution failed: {str(e)}"}
 
     # --- Tool Handlers ---
     # These are kept separate from the dispatch map to allow for more complex logic, error handling, or multi-step processes that might be required for certain tools.
