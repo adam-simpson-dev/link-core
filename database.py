@@ -85,13 +85,18 @@ class DatabaseManager:
     def get_all_nodes(self):
         """Feeds the WebGL UI node graph."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, label, display_name FROM nodes")
+        cursor.execute("SELECT uid, label, display_name FROM nodes")
         return cursor.fetchall()
 
     def get_all_edges(self):
         """Feeds the WebGL UI edge graph."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, source_id, target_id, relationship FROM edges")
+        cursor.execute("""
+            SELECT e.id, s.uid, t.uid, e.relationship 
+            FROM edges e
+            JOIN nodes s ON e.source_id = s.id
+            JOIN nodes t ON e.target_id = t.id
+        """)
         return cursor.fetchall()
 
     def get_relevant_context(self, keywords: list) -> str:
