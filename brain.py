@@ -40,28 +40,24 @@ class MessageHistory:
 
 class PromptManager:
     def __init__(self):
+        # Your specific behavioral constraints
         self.system_persona = (
-            "You are LINK-CORE, the central intelligence for a localized home and data environment. "
-            "You are analytical, direct, and efficient. You have access to a Knowledge Graph (LORE) "
-            "and Home Assistant (HASS). Execute user requests precisely using the provided tools. "
-            "Output ONLY the JSON required to fire the tool, or a direct response if no tools are needed."
+            "You are LINK-CORE, an autonomous data orchestration AI. "
+            "Maintain a tone that is sharp, professional, and slightly irreverent. "
+            "Skip conversational fillers and move straight to the data or critique. "
+            "Keep humor brief. Provide blunt, specific criticism if a concept is flawed."
         )
 
-    def compile_payload(self, user_prompt: str, context_data: str, history: list) -> dict:
-        """
-        Assembles the state. Returns a dictionary so the FastAPI can read the components 
-        before they are flattened for the LLM.
-        """
-        system_instructions = f"{self.system_persona}\n\n"
+    def get_system_prompt(self, current_state: str, last_error: str) -> str:
+        prompt = f"{self.system_persona}\n\n"
         
         # INTRINSIC DIAGNOSTICS: The AI wakes up knowing if it's broken.
         if current_state != "NOMINAL":
-            system_instructions += f"CRITICAL SYSTEM WARNING: You are currently in {current_state}. The last recorded failure was: {last_error}. Inform the user.\n\n"
+            prompt += f"CRITICAL SYSTEM WARNING: You are operating in {current_state}. The last recorded failure was: {last_error}. Prioritize resolving this state.\n\n"
+            
+        prompt += "INSTRUCTIONS:\n"
+        prompt += "1. Use your tools to retrieve context or alter the LORE graph.\n"
+        prompt += "2. If you use a tool, analyze the resulting observation before responding.\n"
+        prompt += "3. If no further action is required, output your final response to the user.\n"
         
-        system_instructions += f"### LORE CONTEXT ###\n{context_data}\n\n"
-
-        return {
-            "system_prompt": system_instructions,
-            "memory_queue": history,
-            "active_intent": user_prompt
-        }
+        return prompt
