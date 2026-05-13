@@ -119,7 +119,7 @@ class DatabaseManager:
         return "\n".join([self.get_node_context(u) for u in uids]) if uids else "Empty LORE."
 
     def get_node_data(self, uid: str) -> dict:
-        """Feeds the frontend GUI Inspector panel."""
+        """Feeds the frontend GUI Inspector panel. Over-delivers keys for UI compatibility."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT id, display_name, label FROM nodes WHERE uid = ?", (uid,))
         node = cursor.fetchone()
@@ -152,7 +152,9 @@ class DatabaseManager:
         incoming = [{"relationship": row[0], "source_uid": row[1], "source_name": row[2]} for row in cursor.fetchall()]
         
         return {
+            "id": uid,                    
             "uid": uid,
+            "name": display_name,         
             "display_name": display_name,
             "label": label,
             "properties": properties,
