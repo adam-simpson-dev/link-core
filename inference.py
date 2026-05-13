@@ -22,7 +22,7 @@ class InferenceEngine:
     def format_history(self, internal_history):
         formatted = []
         for msg in internal_history:
-            # Standard text interaction
+            # Standard user/model text
             if msg.get("role") in ["user", "model"] and msg.get("content"):
                 formatted.append({"role": msg.get("role"), "parts": [{"text": msg.get("content")}]})
             
@@ -47,7 +47,7 @@ class InferenceEngine:
                 })
         return formatted
 
-    def think(self, system_prompt: str, history: list, user_text: str):
+    def think(self, system_prompt: str, history: list):
         """The cognitive bridge. Sends the state and waits for a decision."""
         
         # Initialize the model dynamically with the current system state & LORE
