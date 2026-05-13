@@ -184,8 +184,11 @@ class DatabaseManager:
     def delete_node(self, uid: str):
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM nodes WHERE uid = ?", (uid,))
+        if cursor.rowcount == 0:
+            return f"Node '{uid}' not found."
+            
         self.conn.commit()
-        return f"Deleted {uid}." if cursor.rowcount > 0 else "Not found."
+        return f"Deleted {uid} and all it's connected edges."
 
     def wipe_database(self, confirm_wipe: bool = False):
         """Erases all data and resets auto-increment counters. Schema remains intact."""

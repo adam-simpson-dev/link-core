@@ -45,7 +45,7 @@
         </div>
         <div class="box">
             <h2>Active Memory</h2>
-            <div id="memory-log" style="font-size: 11px; max-height: 250px; overflow-y: auto; line-height: 1.4;"></div>
+            <div id="memory-log" style="font-size: 11px; height: 180px; overflow: hidden; line-height: 1.4; display: flex; flex-direction: column; justify-content: flex-end;"></div>
         </div>
     </div>
 
@@ -198,11 +198,15 @@
                 statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
                 
                 if (data.memory && data.memory.length > 0) {
-                    const log = data.memory.map(m => {
+                    // Extract only the last 6 items
+                    const recentMemory = data.memory.slice(-6);
+                    
+                    const log = recentMemory.map(m => {
                         const role = m.role ? m.role.toUpperCase() : "SYS";
                         const content = m.content || "Executing backend tool...";
                         return `> [${role}] ${content}`;
                     }).join('<br><br>');
+                    
                     document.getElementById('memory-log').innerHTML = log;
                 } else {
                     document.getElementById('memory-log').innerHTML = "<span style='color: #448888;'>Awaiting Agentic Interaction...</span>";

@@ -91,9 +91,15 @@ class LinkCore:
             
             # Handle Error
             if decision["type"] == "error":
-                err_msg = f"Inference failure: {decision['content']}"
-                self.history.add_message("system", err_msg)
-                return err_msg
+                full_error = decision["content"]
+                
+                # Write the formatted trace to backend logs
+                logging.error(f"[!] INFERENCE FATAL: {full_error}")
+                
+                # Feed a sanitized, truncated string to the UI and Memory
+                short_msg = "API LIMIT OR CONNECTION FAILURE. See core system logs for trace."
+                self.history.add_message("system", short_msg)
+                return short_msg
                 
             # Handle Final Text Response
             elif decision["type"] == "text":
@@ -133,7 +139,7 @@ class LinkCore:
         self.trip_breaker("LLM Recursive Loop Detected. Forced termination.")
         return "Process terminated: Maximum autonomous iterations reached."
 
-    def process_tool_call(self, tool_name, arguments, override=False):
+    def process_tool_call(self, tool_name: str, arguments: dict):
         if self.state == "SAFE_MODE":
             return {"status": "system_locked", "message": self.last_error}
 
