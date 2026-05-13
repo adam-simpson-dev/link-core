@@ -65,7 +65,16 @@ class InferenceEngine:
 
             if response.parts and response.parts[0].function_call:
                 fc = response.parts[0].function_call
-                args = {key: val for key, val in fc.args.items()}
+                
+                # Recursively strip Google Protobuf wrappers into native Python
+                def unpack(obj):
+                    if hasattr(obj, 'items'):
+                        return {k: unpack(v) for k, v in obj.items()}
+                    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
+                        return [unpack(v) for v in obj]
+                    return obj
+
+                args = unpack(fc.args)
                 return {"type": "tool_call", "tool_name": fc.name, "arguments": args}
             else:
                 return {"type": "text", "content": response.text}
