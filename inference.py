@@ -20,17 +20,26 @@ class InferenceEngine:
             })
 
     def format_history(self, internal_history):
-        """Translates the memory queue into Gemini's exact message structure."""
         formatted = []
         for msg in internal_history:
-            # We filter out system/dev console logs so the LLM only sees the active conversation
+            # Standard user/model text
             if msg.get("role") in ["user", "model"] and msg.get("content"):
-                formatted.append({"role": msg["role"], "parts": [{"text": msg.get("content")}]})
+                formatted.append({"role": msg.get("role"), "parts": [{"text": msg.get("content")}]})
             
-            # Formatting the tool execution results for Gemini's context window
+            # The Model requesting a tool
+            elif msg.get("role") == "model" and msg.get("tool_name"):
+                formatted.append({
+                    "role": "model",
+                    "parts": [{"function_call": {
+                        "name": msg.get("tool_name"),
+                        "args": msg.get("arguments", {})
+                    }}]
+                })
+                
+            # The System providing the observation
             elif msg.get("role") == "system" and msg.get("tool_name"):
                 formatted.append({
-                    "role": "function",
+                    "role": "function", 
                     "parts": [{"function_response": {
                         "name": msg.get("tool_name"),
                         "response": {"result": msg.get("content")}
@@ -38,7 +47,7 @@ class InferenceEngine:
                 })
         return formatted
 
-    def think(self, system_prompt: str, history: list, user_text: str):
+    def think(self, system_prompt: str, history: list):
         """The cognitive bridge. Sends the state and waits for a decision."""
         
         # Initialize the model dynamically with the current system state & LORE
@@ -56,7 +65,16 @@ class InferenceEngine:
 
             if response.parts and response.parts[0].function_call:
                 fc = response.parts[0].function_call
-                args = {key: val for key, val in fc.args.items()}
+                
+                # Recursively strip Google Protobuf wrappers into native Python
+                def unpack(obj):
+                    if hasattr(obj, 'items'):
+                        return {k: unpack(v) for k, v in obj.items()}
+                    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
+                        return [unpack(v) for v in obj]
+                    return obj
+
+                args = unpack(fc.args)
                 return {"type": "tool_call", "tool_name": fc.name, "arguments": args}
             else:
                 return {"type": "text", "content": response.text}

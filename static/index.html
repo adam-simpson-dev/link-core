@@ -4,9 +4,12 @@
     <title>LINK-CORE | Panopticon</title>
     <style>
         body { margin: 0; background: #000510; color: #00ffff; font-family: monospace; overflow: hidden; }
-        .ui-panel { position: absolute; top: 10px; z-index: 10; pointer-events: none; }
-        #left-panel { left: 10px; width: 300px; }
-        #right-panel { right: 10px; width: 280px; }
+        .ui-panel { position: absolute; z-index: 10; pointer-events: none; }
+        #left-panel { top: 10px; left: 10px; width: 300px; }
+        #right-panel { top: 10px; right: 10px; width: 280px; }
+        
+        /* The Terminal Panel */
+        #terminal-panel { bottom: 20px; left: 50%; transform: translateX(-50%); width: 600px; }
         
         .box { 
             background: rgba(0, 15, 25, 0.85); 
@@ -17,9 +20,21 @@
         }
         
         h2 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #ffffff; text-shadow: 0 0 8px #00ffff; letter-spacing: 2px;}
+        
         .prop-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0,255,255,0.2); padding: 4px 0;}
         .prop-key { color: #88ffff; }
         .prop-val { color: #ffffff; text-align: right;}
+
+        /* Terminal Specific Styling */
+        #chat-log { max-height: 180px; overflow-y: auto; margin-bottom: 10px; font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; scrollbar-color: #00ffff rgba(0,0,0,0.5); }
+        .msg-user { color: #ffffff; text-align: left; opacity: 0.8; }
+        .msg-ai { color: #00ffff; text-align: left; text-shadow: 0 0 5px #00ffff; }
+        .msg-sys { color: #ff0044; text-align: center; font-weight: bold; }
+        
+        #chat-input-wrapper { display: flex; align-items: center; border-top: 1px solid rgba(0,255,255,0.3); padding-top: 10px; }
+        #chat-input-wrapper span { color: #00ffff; margin-right: 10px; font-weight: bold; }
+        #chat-input { background: transparent; border: none; color: #00ffff; font-family: monospace; font-size: 14px; flex-grow: 1; outline: none; }
+        #chat-input::placeholder { color: rgba(0, 255, 255, 0.3); }
     </style>
 </head>
 <body>
@@ -41,6 +56,19 @@
             <div id="inspect-props"></div>
         </div>
     </div>
+
+    <div class="ui-panel" id="terminal-panel">
+        <div class="box">
+            <h2>Uplink Terminal</h2>
+            <div id="chat-log">
+                <div class="msg-sys">AWAITING INPUT...</div>
+            </div>
+            <div id="chat-input-wrapper">
+                <span>></span>
+                <input type="text" id="chat-input" placeholder="Execute command or query LORE..." autocomplete="off">
+            </div>
+        </div>
+    </div>
     
     <div id="3d-graph"></div>
 
@@ -48,37 +76,23 @@
         import * as THREE from 'https://esm.sh/three';
         import ForceGraph3D from 'https://esm.sh/3d-force-graph';
 
+        // --- GRAPH ENGINE ---
         const elem = document.getElementById('3d-graph');
         const meshRegistry = {}; 
-        
-        // Define our color palette globally for the Lerp function
-        const baseColor = new THREE.Color(0x0088ff); // Deep glowing blue
-        const flashColor = new THREE.Color(0xffffff); // Pure white
+        const baseColor = new THREE.Color(0x0088ff); 
+        const flashColor = new THREE.Color(0xffffff); 
 
         const Graph = ForceGraph3D()(elem)
             .nodeLabel('name')
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
 
-                // The Core (Firefly Glow)
-                // Every node gets a UNIQUE material so they can cycle asynchronously
-                const coreMaterial = new THREE.MeshPhongMaterial({ 
-                    color: 0x0088ff, 
-                    emissive: 0x004488, // The core emits its own dark cyan light
-                    shininess: 100 
-                    });
+                const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x004488, shininess: 100 });
                 const core = new THREE.Mesh(new THREE.SphereGeometry(4), coreMaterial);
-                // Assign a random phase and speed for the color breathing effect
                 core.userData = { phase: Math.random() * Math.PI * 2, speed: 0.01 + Math.random() * 0.02 };
                 group.add(core);
 
-                // The Radar Ping (Dormant until triggered)
-                const pulseMaterial = new THREE.MeshBasicMaterial({ 
-                    color: 0x00ffff, 
-                    transparent: true, 
-                    opacity: 0, // Invisible at rest
-                    depthWrite: false 
-                });
+                const pulseMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0, depthWrite: false });
                 const pulse = new THREE.Mesh(new THREE.SphereGeometry(4), pulseMaterial);
                 pulse.userData = { progress: 0, speed: 0.02, isPinging: false };
                 group.add(pulse);
@@ -97,31 +111,22 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         Graph.scene().add(ambientLight);
 
-        // The Dual Animation Loop (Idle Firefly & Active Ping)
         (function animateGraph() {
             requestAnimationFrame(animateGraph);
-            
             Object.values(meshRegistry).forEach(group => {
                 const core = group.children[0];
                 const pulse = group.children[1];
 
-                // --- IDLE: Firefly Color Breathing ---
                 core.userData.phase += core.userData.speed;
-                // Calculate sine wave from 0.0 to 1.0
                 const mixRatio = (Math.sin(core.userData.phase) + 1) / 2; 
-                // Linearly interpolate between the deep blue and white
                 core.material.color.lerpColors(baseColor, flashColor, mixRatio);
 
-                // --- ACTIVE: Radar Ping Expansion ---
                 if (pulse.userData.isPinging) {
                     pulse.userData.progress += pulse.userData.speed;
-
-                    // Execute the expansion and fade
-                    const currentScale = 1 + (pulse.userData.progress * 1.5); // Grows to 2.5x size
+                    const currentScale = 1 + (pulse.userData.progress * 1.5);
                     pulse.scale.set(currentScale, currentScale, currentScale);
                     pulse.material.opacity = Math.max(0, 0.6 * (1 - pulse.userData.progress)); 
 
-                    // Kill the ping when it reaches maximum radius
                     if (pulse.userData.progress >= 1.0) {
                         pulse.userData.isPinging = false;
                         pulse.userData.progress = 0;
@@ -132,14 +137,12 @@
             });
         })();
 
-        // The Data Wake Trigger
         function triggerSequentialPulse(uids) {
             uids.forEach((uid, index) => {
                 setTimeout(() => {
                     const group = meshRegistry[uid];
                     if (group) {
                         const pulse = group.children[1];
-                        // Simply ignite the boolean flag; the animation loop handles the physics
                         pulse.userData.progress = 0;
                         pulse.userData.isPinging = true;
                     }
@@ -147,7 +150,6 @@
             });
         }
 
-        // --- Fetch & Telemetry logic remains identical ---
         async function fetchNodeData(uid) {
             try {
                 const res = await fetch(`/api/node/${uid}`);
@@ -168,27 +170,22 @@
             } catch (e) { console.error("Inspection failed", e); }
         }
 
+        // --- SYNCHRONIZATION & TELEMETRY ---
         let currentGraphHash = "";
 
         async function syncGraph() {
             try {
                 const res = await fetch('/api/graph');
                 const data = await res.json();
-                
-                // Fast string comparison to detect structural or property changes
                 const newHash = JSON.stringify(data);
                 
                 if (newHash !== currentGraphHash) {
                     currentGraphHash = newHash;
-                    // Push delta to the engine. D3 handles the spatial interpolation.
                     Graph.graphData(data);
                 }
-            } catch (e) {
-                // Fails silently to prevent console spam
-            }
+            } catch (e) {}
         }
 
-        // Run immediately on boot
         syncGraph();
 
         async function updateTelemetry() {
@@ -215,12 +212,62 @@
                     triggerSequentialPulse(data.active_nodes);
                 }
                 
-                // Add the sync trigger here
                 syncGraph();
-                
             } catch (e) {}
         }
         setInterval(updateTelemetry, 2000);
+
+        // --- UPLINK TERMINAL LOGIC ---
+        const chatInput = document.getElementById('chat-input');
+        const chatLog = document.getElementById('chat-log');
+
+        function appendMessage(role, text) {
+            const msgDiv = document.createElement('div');
+            
+            if (role === 'user') {
+                msgDiv.className = 'msg-user';
+                msgDiv.innerText = `USER: ${text}`;
+            } else if (role === 'ai') {
+                msgDiv.className = 'msg-ai';
+                msgDiv.innerText = `CORE: ${text}`; // innerText strictly enforces raw text output
+            } else {
+                msgDiv.className = 'msg-sys';
+                msgDiv.innerText = text;
+            }
+            
+            chatLog.appendChild(msgDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        chatInput.addEventListener('keypress', async function (e) {
+            if (e.key === 'Enter' && this.value.trim() !== '') {
+                const text = this.value.trim();
+                this.value = ''; 
+                
+                appendMessage('user', text);
+                
+                // Remove the "Awaiting Input" placeholder if it exists
+                const sysMsg = chatLog.querySelector('.msg-sys');
+                if (sysMsg) sysMsg.remove();
+
+                try {
+                    const res = await fetch('/api/interact', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: text })
+                    });
+                    
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        appendMessage('ai', data.result);
+                    } else {
+                        appendMessage('sys', `[ERROR] ${data.result}`);
+                    }
+                } catch (err) {
+                    appendMessage('sys', '[FATAL] Link to Cortex lost.');
+                }
+            }
+        });
     </script>
 </body>
 </html>
