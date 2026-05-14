@@ -22,29 +22,36 @@ class InferenceEngine:
     def format_history(self, internal_history):
         formatted = []
         for msg in internal_history:
-            # Standard user/model text
+            # Standard conversational text
             if msg.get("role") in ["user", "model"] and msg.get("content"):
                 formatted.append({"role": msg.get("role"), "parts": [{"text": msg.get("content")}]})
             
-            # The Model requesting a tool
-            elif msg.get("role") == "model" and msg.get("tool_name"):
-                formatted.append({
-                    "role": "model",
-                    "parts": [{"function_call": {
-                        "name": msg.get("tool_name"),
-                        "args": msg.get("arguments", {})
-                    }}]
-                })
+            # The Model requesting to use a tool
+            elif msg.get("role") == "model" and msg.get("tool_calls"):
+                parts = []
+                for tc in msg["tool_calls"]:
+                    parts.append({
+                        "function_call": {
+                            "name": tc["tool_name"],
+                            "args": tc["arguments"]
+                        }
+                    })
+                formatted.append({"role": "model", "parts": parts})
                 
-            # The System providing the observation
-            elif msg.get("role") == "system" and msg.get("tool_name"):
-                formatted.append({
-                    "role": "function", 
-                    "parts": [{"function_response": {
-                        "name": msg.get("tool_name"),
-                        "response": {"result": msg.get("content")}
-                    }}]
-                })
+            # The System feeding the tool's result back to the Model
+            elif msg.get("role") == "system" and msg.get("tool_results"):
+                parts = []
+                for tr in msg["tool_results"]:
+                    parts.append({
+                        "function_response": {
+                            "name": tr["tool_name"],
+                            # Gemini requires the response to be nested under a generic key like 'result' or 'content'
+                            "response": {"content": tr["content"]} 
+                        }
+                    })
+                # Gemini strictly enforces that function_responses originate from the "user" role
+                formatted.append({"role": "user", "parts": parts})
+                
         return formatted
 
     def _unpack_protobuf(self, obj):
@@ -85,5 +92,4 @@ class InferenceEngine:
             return {"type": "text", "content": response.text}
                 
         except Exception as e:
-            logging.error(f"[!] SDK Error: {str(e)}")
             return {"type": "error", "content": str(e)}
