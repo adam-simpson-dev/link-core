@@ -99,24 +99,47 @@ class DatabaseManager:
         """)
         return cursor.fetchall()
 
-    def get_relevant_context(self, keywords: list) -> str:
-        """Hybrid Semantic Retrieval."""
+    def _estimate_tokens(self, text: str) -> float:
+        """Fast heuristic for token weight without loading a heavy ML tokenizer."""
+        return len(text.split()) * 1.3
+
+    def get_relevant_context(self, keywords: list, max_tokens: int = 1500) -> str:
+        """
+        Hybrid Semantic Retrieval with Radial Constraints.
+        """
         if not keywords: return "No context."
-        uids = set()
+        seed_uids = set()
         query_string = " ".join(keywords)
         
-        # Semantic Check
-        uids.update(self.vector.query_semantic_uids(query_string))
-        
-        # Keyword Check
+        # The Compass: ChromaDB finds the entry points (Top 2 only to limit sprawl)
+        seed_uids.update(self.vector.query_semantic_uids(query_string, n_results=2))
+
+        # Keyword Fallback: Ensure explicit targets aren't missed
         cursor = self.conn.cursor()
         for kw in keywords:
             like_kw = f"%{kw}%"
-            cursor.execute("SELECT uid FROM nodes WHERE uid LIKE ? OR display_name LIKE ?", (like_kw, like_kw))
-            uids.update([row[0] for row in cursor.fetchall()])
+            cursor.execute("SELECT uid FROM nodes WHERE uid LIKE ? OR display_name LIKE ? LIMIT 2", (like_kw, like_kw))
+            seed_uids.update([row[0] for row in cursor.fetchall()])
 
-        self.last_accessed_uids = list(uids)
-        return "\n".join([self.get_node_context(u) for u in uids]) if uids else "Empty LORE."
+        # The Map & The Guillotine: Assemble context until the token limit is hit
+        self.last_accessed_uids = list(seed_uids)
+        
+        final_context_blocks = []
+        current_token_weight = 0.0
+
+        for uid in seed_uids:
+            node_data = self.get_node_context(uid)
+            block_weight = self._estimate_tokens(node_data)
+            
+            # If adding this node blows the limit, halt expansion.
+            if current_token_weight + block_weight > max_tokens:
+                logging.warning(f"[!] CONTEXT PRUNED: Hit {max_tokens} token limit at node '{uid}'.")
+                break
+                
+            final_context_blocks.append(node_data)
+            current_token_weight += block_weight
+
+        return "\n".join(final_context_blocks) if final_context_blocks else "Empty LORE."
 
     def get_node_data(self, uid: str) -> dict:
         """Feeds the frontend GUI Inspector panel. Over-delivers keys for UI compatibility."""
@@ -165,23 +188,37 @@ class DatabaseManager:
         }
 
     def get_node_context(self, uid: str) -> str:
+        """Pulls properties and strictly Depth-1 edges."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT id, display_name FROM nodes WHERE uid = ?", (uid,))
         node = cursor.fetchone()
         if not node: return ""
         
         n_id, name = node
-        # Ensure we filter by NODE type here as well
+
+        # Property search
         cursor.execute("SELECT key, value FROM properties WHERE target_id = ? AND target_type = 'NODE'", (n_id,))
         props = [f"{row[0]}: {row[1]}" for row in cursor.fetchall()]
         
+        # Edges (Depth 1)
         cursor.execute("""
             SELECT e.relationship, n.uid FROM edges e 
             JOIN nodes n ON e.target_id = n.id WHERE e.source_id = ?
         """, (n_id,))
-        rels = [f"{uid} {row[0]} {row[1]}" for row in cursor.fetchall()]
+        outgoing = [f"-[{row[0]}]-> {row[1]}" for row in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT e.relationship, n.uid FROM edges e 
+            JOIN nodes n ON e.source_id = n.id WHERE e.target_id = ?
+        """, (n_id,))
+        incoming = [f"<-[{row[0]}]- {row[1]}" for row in cursor.fetchall()]
         
-        return f"Node: {uid} ({name})\nProperties: {', '.join(props)}\nRelationships: {', '.join(rels)}"
+        return (
+            f"--- NODE: {uid} ({name}) ---\n"
+            f"Properties: {', '.join(props) if props else 'None'}\n"
+            f"Outgoing Links: {', '.join(outgoing) if outgoing else 'None'}\n"
+            f"Incoming Links: {', '.join(incoming) if incoming else 'None'}\n"
+        )
 
     def create_relationship(self, source_uid, target_uid, relationship):
         cursor = self.conn.cursor()
