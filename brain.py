@@ -1,6 +1,7 @@
 import json
 import logging
 from tools import TOOL_SCHEMAS
+from datetime import datetime
 
 class MessageHistory:
     def __init__(self, max_tokens=4000):
@@ -10,6 +11,8 @@ class MessageHistory:
         """
         self.history = []
         self.max_tokens = max_tokens
+
+
 
     def _estimate_tokens(self, text: str) -> float:
         """Fast heuristic for token weight."""
@@ -65,16 +68,24 @@ class PromptManager:
         )
 
     def get_system_prompt(self, current_state: str, last_error: str) -> str:
+        # Establish the Temporal Anchor
+        current_time_iso = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        day_of_week = datetime.now().strftime("%A")
+        
         prompt = f"{self.system_persona}\n\n"
+
+        # Inject the time anchor
+        prompt += f"TEMPORAL ANCHOR: It is currently {day_of_week}, {current_time_iso} local time. "
+        prompt += "Use this baseline to calculate 'start_time_iso' for history inspections.\n\n"
 
         # INTRINSIC DIAGNOSTICS: The AI wakes up knowing if it's broken.        
         if current_state != "NOMINAL":
             prompt += f"CRITICAL SYSTEM WARNING: You are operating in {current_state}. The last recorded failure was: {last_error}. Prioritize resolving this state.\n\n"
             
         prompt += "INSTRUCTIONS:\n"
-        prompt += "1. READ BEFORE WRITE: You MUST use 'get_context' to resolve generic nouns to their specific UIDs before executing any memory updates.\n"
-        prompt += "2. RELATIONAL ENFORCEMENT: Never create literal string properties for relationships. You must resolve the target node and create a directional link using 'create_link' or the relationships array in 'batch_update'.\n"
-        prompt += "3. If you use a tool, analyze the resulting observation before responding.\n"
-        prompt += "4. If no further action is required, output your final response to the user.\n"
+        prompt += "1. READ BEFORE WRITE: Use 'get_context' to resolve generic nouns to UIDs before modifying memory.\n"
+        prompt += "2. OMNI-TOOL EFFICIENCY: Batch your memory updates using 'modify_lore' whenever possible.\n"
+        prompt += "3. PRECISION STRIKES: Do not guess HASS entity IDs. If unknown, check lore context first and avoid duplicates.\n"
+        prompt += "4. HANDLE REDUNDANT PROMPTs: If not tool is required, respond with a concise answer and avoid unnecessary tool calls.\n"
         
         return prompt

@@ -37,14 +37,15 @@ class LinkCore:
             self.ai = InferenceEngine()
             # Map JSON tool names to their handler functions for dynamic dispatching
             self.dispatch_map = {
+                # Node and Lore Management
                 "get_context": self.db.get_relevant_context,
-                "update_memory": self.db.upsert_lore,
-                "create_link": self.db.create_relationship,
+                "modify_lore": self.handle_modify_lore,
+                #"read_document": self.handle_read_document, <-- Left in in case we want to add file reading back as a tool in the future
+                # Home Assistant Control
                 "control_home": self.handle_home_control,
-                "read_document": self.handle_read_document,
-                "delete_node": self.db.delete_node,
-                "wipe_database": self.db.wipe_database,
-                "batch_update_lore": self.db.batch_update_lore
+                "inspect_entity": self.handle_inspect_entity,
+                "get_area_map": self.handle_get_areas,
+                "fire_home_event": self.handle_fire_event
             }
             logging.info("[*] LINK-CORE Dispatcher Active. Systems Nominal.")
         except Exception as e:
@@ -140,6 +141,74 @@ class LinkCore:
         service_data.update(kwargs) # This catches brightness, color_name, etc.
         logging.info(f"Refined HA Call: {domain}.{service} -> {service_data}")
         return self.hass.call_service(domain, service, service_data)
+
+    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_uids=None):
+        """Omni-Tool router. Passes batched operations to the Database Manager."""
+        results = []
+        
+        if upsert_nodes:
+            for node in upsert_nodes:
+                uid = node.get("uid")
+                for k, v in node.get("traits", {}).items():
+                    self.db.upsert_lore(uid, k, str(v))
+            results.append(f"Upserted traits for {len(upsert_nodes)} nodes")
+            
+        if create_links:
+            for link in create_links:
+                self.db.create_relationship(link["source"], link["target"], link["relation"])
+            results.append(f"Created {len(create_links)} links")
+            
+        if delete_uids:
+            for uid in delete_uids:
+                self.db.delete_node(uid)
+            results.append(f"Deleted {len(delete_uids)} nodes")
+            
+        return " | ".join(results) if results else "No modifications provided."
+
+    def handle_inspect_entity(self, entity_id, start_time_iso=None):
+        """Dual-purpose HASS inspector. Handles both state and history."""
+        if start_time_iso:
+            history = self.hass.get_history(entity_id, start_time_iso)
+            if not history: return f"No history found for {entity_id}."
+            events = history[0] if isinstance(history, list) and history else []
+            timeline = [f"[{e.get('last_changed')}] {e.get('state')}" for e in events[-10:]]
+            return "\n".join(timeline)
+        else:
+            raw_data = self.hass.get_entity_state(entity_id)
+            if not raw_data: return f"Error: Entity {entity_id} not found."
+            return {
+                "entity_id": raw_data.get("entity_id"),
+                "state": raw_data.get("state"),
+                "last_changed": raw_data.get("last_changed"),
+                "friendly_name": raw_data.get("attributes", {}).get("friendly_name")
+            }
+
+    def handle_get_areas(self):
+        """Processes HASS areas into a high-density intelligence report."""
+        # Use your hass_client method
+        raw_areas = self.hass.get_area_map()
+        
+        if not raw_areas or "error" in raw_areas:
+            return "No structured areas found in Home Assistant configuration."
+
+        # Filter the noise: We only want Area Name -> Entities
+        # This prevents the AI from getting lost in HASS internal metadata
+        area_summary = {}
+        for item in raw_areas:
+            area_name = item.get("name", "Unassigned")
+            # This logic assumes your hass_client.py returns a list of areas
+            # or a mapped dict. Adjust based on your exact hass_client return.
+            area_summary[area_name] = item.get("entities", [])
+
+        return area_summary if area_summary else "Area map is empty."
+
+    def handle_fire_event(self, event_name, event_data=None):
+        """Executes a custom automation."""
+        success = self.hass.fire_custom_event(event_name, event_data or {})
+        if success:
+            logging.info(f"[*] Custom Event Fired: {event_name}")
+            return f"Event '{event_name}' successfully broadcast to Home Assistant."
+        return f"Failed to fire event '{event_name}'."
 
     def shutdown(self):
         """Graceful termination of database links."""

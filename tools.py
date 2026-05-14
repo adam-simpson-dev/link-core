@@ -1,9 +1,10 @@
 # tools.py
 
 TOOL_SCHEMAS = [
+    # --- Core Memory Tools ---
     {
         "name": "get_context",
-        "description": "Retrieve information from the LORE graph using specific keywords.",
+        "description": "Fetch LORE graph data by keyword.",
         "risk_level": "low",
         "parameters": {
             "type": "object",
@@ -12,143 +13,73 @@ TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "update_memory",
-        "description": "Updates or adds a specific trait or preference for a person or object in the home database.",
+        "name": "modify_lore",
+        "description": "Omni-tool to update memory. Add/update nodes, link entities, or delete nodes.",
         "risk_level": "moderate",
         "parameters": {
             "type": "object",
             "properties": {
-                "target_uid": {
-                    "type": "string",
-                    "description": "The unique ID of the person or object (e.g., 'dad', 'child_1')."
+                "upsert_nodes": {
+                    "type": "array", 
+                    "items": {"type": "object", "properties": {"uid": {"type": "string"}, "traits": {"type": "object"}}}
                 },
-                "key": {
-                    "type": "string",
-                    "description": "The trait being updated (e.g., 'favorite_color', 'bedtime', 'role')."
+                "create_links": {
+                    "type": "array",
+                    "items": {"type": "object", "properties": {"source": {"type": "string"}, "target": {"type": "string"}, "relation": {"type": "string"}}}
                 },
-                "value": {
-                    "type": "string",
-                    "description": "The new value for the trait."
+                "delete_uids": {
+                    "type": "array", 
+                    "items": {"type": "string"}
                 }
-            },
-            "required": ["target_uid", "key", "value"]
+            }
         }
     },
-    {
-        "name": "create_link",
-        "description": "Establishes a relationship between two existing entities in LORE.",
-        "risk_level": "low",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "source_uid": {"type": "string", "description": "The UID of the starting node."},
-                "target_uid": {"type": "string", "description": "The UID of the destination node."},
-                "relationship": {"type": "string", "description": "The type of connection (e.g., 'married_to', 'parent_of', 'located_in')."}
-            },
-            "required": ["source_uid", "target_uid", "relationship"]
-        }
-    },
+    # --- Home Assistant Tools ---
     {
         "name": "control_home",
-        "description": "Triggers an action in the smart home via Home Assistant.",
-        "risk_level": "low",
+        "description": "Execute action on HASS entity.",
+        "risk_level": "moderate",
         "parameters": {
             "type": "object",
             "properties": {
-                "domain": {
-                    "type": "string", 
-                    "description": "The HA domain (e.g., 'light', 'switch', 'climate', 'media_player')."
-                },
-                "service": {
-                    "type": "string",
-                    "description": "The action to take (e.g., 'turn_on', 'turn_off', 'toggle', 'set_temperature')."
-                },
-                "entity_id": {
-                    "type": "string",
-                    "description": "The specific device ID in Home Assistant (e.g., 'light.kitchen_main')."
-                },
-                "brightness": {
-                    "type": "integer",
-                    "description": "Optional: Brightness level from 0 to 255 (for lights)."
-                },
-                "color_name": {
-                    "type": "string",
-                    "description": "Optional: CSS color name (e.g., 'red', 'blue', 'purple') for RGB lights."
-                },
-                "temperature": {
-                    "type": "integer",
-                    "description": "Optional: Target temperature in Celsius (for climate devices)."
-                },
-                "volume_level": {
-                    "type": "number",
-                    "description": "Optional: Float from 0.0 to 1.0 (for media players)."
-                }
+                "domain": {"type": "string", "description": "e.g., 'light', 'switch'"},
+                "service": {"type": "string", "description": "e.g., 'turn_on', 'turn_off'"},
+                "entity_id": {"type": "string"},
+                "kwargs": {"type": "object", "description": "Optional params like brightness, color."}
             },
             "required": ["domain", "service", "entity_id"]
         }
     },
     {
-        "name": "read_document",
-        "description": "Reads the text content of a local file (markdown, txt, or json) to gather deep project lore or complex instructions.",
+        "name": "inspect_entity",
+        "description": "Get HASS entity state. Provide start_time_iso for history.",
         "risk_level": "low",
         "parameters": {
             "type": "object",
             "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "The full system path to the file."
-                }
+                "entity_id": {"type": "string"},
+                "start_time_iso": {"type": "string", "description": "Optional ISO 8601 timestamp."}
             },
-            "required": ["file_path"]
+            "required": ["entity_id"]
         }
     },
     {
-        "name": "delete_node",
-        "description": "Permanently removes a single node and its edges. Use strictly as a last resort.",
-        "risk_level": "high",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "uid": {"type": "string", "description": "The exact UID of the node to delete."}
-            },
-            "required": ["uid"]
-        }
+        "name": "get_area_map",
+        "description": "Get structural map of the home.",
+        "risk_level": "low",
+        "parameters": {"type": "object", "properties": {}}
     },
     {
-        "name": "batch_update_lore",
-        "description": "Creates multiple nodes, properties, and relationships in a single transaction. Highly efficient for mass data ingestion.",
-        "risk_level": "medium",
+        "name": "fire_home_event",
+        "description": "Trigger custom Home Assistant event.",
+        "risk_level": "moderate",
         "parameters": {
             "type": "object",
             "properties": {
-                "entities": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "uid": {"type": "string"},
-                            "properties": {
-                                "type": "object",
-                                "description": "Key-value pairs of traits. e.g., {'role': 'Commander', 'status': 'Active'}"
-                            }
-                        },
-                        "required": ["uid", "properties"]
-                    }
-                },
-                "relationships": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "source_uid": {"type": "string"},
-                            "target_uid": {"type": "string"},
-                            "relationship": {"type": "string"}
-                        },
-                        "required": ["source_uid", "target_uid", "relationship"]
-                    }
-                }
+                "event_name": {"type": "string"},
+                "event_data": {"type": "object"}
             },
-            "required": ["entities"]
+            "required": ["event_name"]
         }
     }
 ]

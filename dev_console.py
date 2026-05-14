@@ -33,10 +33,10 @@ def main():
         # --- HUMAN ALIAS ROUTER ---
         if base_cmd in ["help", "-h", "--help", "?"]:
             print("\n--- LINK-CORE COMMAND MANUAL ---")
-            print("lore <keywords>    | Semantic & graph lookup (e.g., 'lore spaceship')")
-            print("remove <uid>       | Permanent node deletion (e.g., 'remove dr_smith')")
+            print("lore <keywords>    | Semantic & graph lookup (e.g., 'lore object')")
+            print("remove <uid>       | Permanent node deletion (e.g., 'remove object')")
             print("wipe lore          | Full database factory reset (Safety locked)")
-            print("<tool> <json>      | Direct API execution (e.g., 'get_node_data {\"uid\":\"john\"}')")
+            print("<tool> <json>      | Direct API execution (e.g., 'get_node_data {\"uid\":\"object\"}')")
             print("exit / quit        | Terminate uplink\n")
             continue # Skip execution for the help command
             
@@ -49,7 +49,7 @@ def main():
             args = {"uid": arg_str.strip()}
             
         elif base_cmd == "wipe" and arg_str.strip() == "lore":
-            confirm = input("[!] CRITICAL: This will destroy all memory. Proceed? [y/N]: ")
+            confirm = input("[!] CRITICAL: This will destroy all memory. Proceed? [Y/N]: ")
             if confirm.lower() == 'y':
                 tool = "wipe_database"
                 args = {"confirm_wipe": True}
