@@ -132,6 +132,35 @@
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         Graph.scene().add(ambientLight);
 
+        // --- CINEMATIC IDLE STATE ---
+        let isIdle = false;
+        let idleStartTime = 0;
+        let interactionTimeout = null;
+
+        function resetIdleTimer() {
+            isIdle = false;
+            clearTimeout(interactionTimeout);
+            
+            // Wait 4 seconds after the user stops interacting
+            interactionTimeout = setTimeout(() => {
+                isIdle = true;
+                idleStartTime = Date.now();
+                
+                // The Re-fit: Smoothly return to center and fit all nodes on screen over 2 seconds
+                // The '100' is the padding in pixels from the edge of the screen
+                Graph.zoomToFit(2000, 100); 
+            }, 4000);
+        }
+
+        // Bind to all standard interaction events on the graph container
+        elem.addEventListener('mousemove', resetIdleTimer);
+        elem.addEventListener('mousedown', resetIdleTimer);
+        elem.addEventListener('wheel', resetIdleTimer);
+        elem.addEventListener('touchstart', resetIdleTimer);
+
+        // Start the timer on initial load
+        resetIdleTimer();
+            
         (function animateGraph() {
             requestAnimationFrame(animateGraph);
 
@@ -187,6 +216,27 @@
                     }
                 }
             });
+        
+            // --- CINEMATIC ORBIT ---
+            // Only engage the orbit AFTER the 2000ms zoomToFit transition has finished otherwise they fight!
+            if (isIdle && Date.now() - idleStartTime > 2000) {
+                
+                // Calculate current radius and angle in the XZ plane
+                const distance = Math.hypot(cam.position.x, cam.position.z);
+                const currentAngle = Math.atan2(cam.position.z, cam.position.x);
+                
+                // Advance the angle slightly (0.0005 is a very slow, elegant drift)
+                const newAngle = currentAngle + 0.0005;
+                
+                // Overwrite the camera position. Passing no transition time snaps it instantly for the frame,
+                // allowing for butter-smooth continuous rotation without fighting the controls.
+                Graph.cameraPosition({
+                    x: distance * Math.cos(newAngle),
+                    z: distance * Math.sin(newAngle),
+                    y: cam.position.y // Lock the vertical height established by zoomToFit
+                });
+            }
+        
         })();
 
         function triggerSequentialPulse(uids) {
