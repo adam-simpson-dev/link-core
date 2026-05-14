@@ -131,8 +131,9 @@ class DatabaseManager:
         
         # Fetch Properties
         cursor.execute("SELECT key, value FROM properties WHERE target_id = ? AND target_type = 'NODE'", (n_id,))
-        properties = {row[0]: row[1] for row in cursor.fetchall()}
-        
+        raw_props = cursor.fetchall()
+        properties_array = [{"key": row[0], "value": row[1]} for row in raw_props]
+
         # Fetch Outgoing Edges
         cursor.execute("""
             SELECT e.relationship, n.uid, n.display_name 
@@ -150,14 +151,15 @@ class DatabaseManager:
             WHERE e.target_id = ?
         """, (n_id,))
         incoming = [{"relationship": row[0], "source_uid": row[1], "source_name": row[2]} for row in cursor.fetchall()]
-        
+
         return {
-            "id": uid,                    
+            "id": uid,
             "uid": uid,
-            "name": display_name,         
+            "name": display_name,
             "display_name": display_name,
             "label": label,
-            "properties": properties,
+            "class": label,
+            "properties": properties_array,
             "outgoing_edges": outgoing,
             "incoming_edges": incoming
         }

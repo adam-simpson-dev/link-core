@@ -58,25 +58,23 @@ class LinkCore:
         logging.critical(f"[!] CIRCUIT BREAKER TRIPPED. System Locked. Reason: {reason}")
 
     def get_system_telemetry(self):
-        """Feeds the UI. Consumes the data wake to prevent sticky pings."""
-        
-        # Capture the current radar targets
-        current_wake = list(self.db.last_accessed_uids)
-        
-        # Instantly flush the backend buffer
-        self.db.last_accessed_uids.clear()
-        
-        # Return your standard telemetry payload. Ensure the names match what the frontend expects.
+        """Feeds the UI. Polling no longer destroys the buffer."""
+        wake = list(self.db.last_accessed_uids)
         return {
             "state": self.state,
             "last_error": self.last_error,
             "memory": self.history.get_context(),
-            "last_accessed_uids": current_wake # Passed to frontend
+            "last_accessed_uids": wake,
+            "accessed_uids": wake,
+            "active_nodes": wake
         }
         
     def process_natural_language(self, user_input: str):
         """The ReAct (Reasoning & Acting) Loop."""
         if self.state == "SAFE_MODE": return "System locked."
+
+        # Flush the radar buffer ONLY when a new cognitive process begins.
+        self.db.last_accessed_uids.clear()
 
         # Log user intent
         self.history.add_message("user", user_input)
