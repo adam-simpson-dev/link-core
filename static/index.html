@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>LINK-CORE | Panopticon</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <style>
         body { margin: 0; background: #000510; color: #00ffff; font-family: monospace; overflow: hidden; }
         .ui-panel { position: absolute; z-index: 10; pointer-events: none; }
@@ -85,9 +86,9 @@
         let hoverNode = null; 
 
         const Graph = ForceGraph3D()(elem)
+            .nodeLabel(() => '') // We handle labels with custom sprites, so return empty string here
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
-
                 // NODE SCALING: Use the calculated 'val' from our syncGraph function (default to 4)
                 const size = node.val || 4;
 
@@ -133,6 +134,11 @@
 
         (function animateGraph() {
             requestAnimationFrame(animateGraph);
+
+            // Calculate the Camera's "Up" direction in the 3D world ONCE per frame
+            const cam = Graph.camera();
+            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
+
             Object.keys(meshRegistry).forEach(uid => {
                 const group = meshRegistry[uid];
                 const core = group.children[0];
@@ -159,14 +165,17 @@
                     }
                 }
 
-                // PROXIMITY FADING: Calculate 3D distance and adjust text opacity
+                // --- Text Proximity & Dynamic Positioning ---
                 if (label) {
+                    // Dynamically reposition the text to always be "screen-up" from the node
+                    const size = core.geometry.parameters.radius; // Read the dynamic size of the node
+                    label.position.copy(cameraUp).multiplyScalar(size + 4); 
+
                     if (hoverNode) {
                         const hoverGroup = meshRegistry[hoverNode.id];
                         if (hoverGroup) {
-                            // Check distance between current node and the node being hovered
                             const dist = group.position.distanceTo(hoverGroup.position);
-                            if (dist < 80) { // 80 units is a good visual radius
+                            if (dist < 80) { 
                                 const alpha = Math.max(0, 1 - (dist / 80));
                                 label.color = `rgba(0, 255, 255, ${alpha})`;
                             } else {
@@ -174,7 +183,7 @@
                             }
                         }
                     } else {
-                        label.color = 'rgba(0, 255, 255, 0)'; // Hide all text if mouse is off
+                        label.color = 'rgba(0, 255, 255, 0)';
                     }
                 }
             });

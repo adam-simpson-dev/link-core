@@ -72,6 +72,14 @@ async def get_graph():
     
     return {"nodes": nodes, "links": links}
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    import os
+    file_path = "static/favicon.ico"
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return Response(status_code=204)
+
 @app.post("/command")
 async def execute_command(call: CommandRequest):
     result = core.process_tool_call(call.tool_name, call.arguments)
