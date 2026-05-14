@@ -85,9 +85,11 @@ async def get_graph():
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     import os
-    file_path = "static/favicon.ico"
+    # Use an absolute path check
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "static", "favicon.ico")
+    
     if os.path.exists(file_path):
-        # Force the correct MIME type for .ico files
         return FileResponse(file_path, media_type="image/x-icon")
     return Response(status_code=204)
 
