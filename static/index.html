@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>LINK-CORE | Panopticon</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <style>
         body { margin: 0; background: #000510; color: #00ffff; font-family: monospace; overflow: hidden; }
         .ui-panel { position: absolute; z-index: 10; pointer-events: none; }
@@ -75,52 +76,81 @@
     <script type="module">
         import * as THREE from 'https://esm.sh/three';
         import ForceGraph3D from 'https://esm.sh/3d-force-graph';
+        import SpriteText from 'https://esm.sh/three-spritetext';
 
         // --- GRAPH ENGINE ---
         const elem = document.getElementById('3d-graph');
         const meshRegistry = {}; 
         const baseColor = new THREE.Color(0x0088ff); 
-        const flashColor = new THREE.Color(0xffffff); 
+        const flashColor = new THREE.Color(0xffffff);
+        let hoverNode = null; 
 
         const Graph = ForceGraph3D()(elem)
-            .nodeLabel('name')
+            .nodeLabel(() => '') // We handle labels with custom sprites, so return empty string here
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
+                // NODE SCALING: Use the calculated 'val' from our syncGraph function (default to 4)
+                const size = node.val || 4;
 
                 const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x004488, shininess: 100 });
-                const core = new THREE.Mesh(new THREE.SphereGeometry(4), coreMaterial);
+                const core = new THREE.Mesh(new THREE.SphereGeometry(size), coreMaterial);
                 core.userData = { phase: Math.random() * Math.PI * 2, speed: 0.01 + Math.random() * 0.02 };
                 group.add(core);
 
                 const pulseMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0, depthWrite: false });
-                const pulse = new THREE.Mesh(new THREE.SphereGeometry(4), pulseMaterial);
+                const pulse = new THREE.Mesh(new THREE.SphereGeometry(size), pulseMaterial);
                 pulse.userData = { progress: 0, speed: 0.02, isPinging: false };
                 group.add(pulse);
+
+                // 3D TEXT HALO: Add a hidden text sprite above the node
+                const label = new SpriteText(node.name ? node.name.toUpperCase() : "UNKNOWN");
+                label.color = 'rgba(0, 255, 255, 0)'; // Start completely invisible (alpha 0)
+                label.textHeight = Math.max(3, size * 0.6); // Scale text slightly based on node size
+                label.position.y = size + 4; // Hover slightly above the sphere
+                group.add(label);
 
                 meshRegistry[node.id] = group; 
                 return group;
             })
+            .onNodeHover(node => {
+                // Track which node the mouse is currently looking at
+                hoverNode = node || null;
+                elem.style.cursor = node ? 'pointer' : null;
+            })
             .onNodeClick(node => fetchNodeData(node.id))
-            .linkColor(() => 'rgba(0, 255, 255, 0.15)')
+            .onBackgroundClick(() => {
+                // DESELECT: This hides the properties box when clicking empty space
+                document.getElementById('inspector-box').style.display = 'none';
+            })
+            .linkColor(() => 'rgba(0, 255, 255, 0.5)')
             .linkWidth(0.5)
-            .linkDirectionalParticles(d => Math.floor(Math.random() * 3) + 1)
-            .linkDirectionalParticleWidth(1.5)
+            .linkDirectionalParticles(d => Math.floor(Math.random() * 2) + 1)
+            .linkDirectionalParticleWidth(1.2)
             .linkDirectionalParticleColor(() => '#00ffff')
-            .linkDirectionalParticleSpeed(d => 0.004 + Math.random() * 0.008);
+            .linkDirectionalParticleSpeed(d => 0.02 + Math.random() * 0.008);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         Graph.scene().add(ambientLight);
 
         (function animateGraph() {
             requestAnimationFrame(animateGraph);
-            Object.values(meshRegistry).forEach(group => {
+
+            // Calculate the Camera's "Up" direction in the 3D world ONCE per frame
+            const cam = Graph.camera();
+            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
+
+            Object.keys(meshRegistry).forEach(uid => {
+                const group = meshRegistry[uid];
                 const core = group.children[0];
                 const pulse = group.children[1];
+                const label = group.children[2];
 
+                // --- Core pulsing logic ---
                 core.userData.phase += core.userData.speed;
                 const mixRatio = (Math.sin(core.userData.phase) + 1) / 2; 
                 core.material.color.lerpColors(baseColor, flashColor, mixRatio);
 
+                // --- Radar ping logic ---
                 if (pulse.userData.isPinging) {
                     pulse.userData.progress += pulse.userData.speed;
                     const currentScale = 1 + (pulse.userData.progress * 1.5);
@@ -132,6 +162,28 @@
                         pulse.userData.progress = 0;
                         pulse.material.opacity = 0;
                         pulse.scale.set(1, 1, 1);
+                    }
+                }
+
+                // --- Text Proximity & Dynamic Positioning ---
+                if (label) {
+                    // Dynamically reposition the text to always be "screen-up" from the node
+                    const size = core.geometry.parameters.radius; // Read the dynamic size of the node
+                    label.position.copy(cameraUp).multiplyScalar(size + 4); 
+
+                    if (hoverNode) {
+                        const hoverGroup = meshRegistry[hoverNode.id];
+                        if (hoverGroup) {
+                            const dist = group.position.distanceTo(hoverGroup.position);
+                            if (dist < 80) { 
+                                const alpha = Math.max(0, 1 - (dist / 80));
+                                label.color = `rgba(0, 255, 255, ${alpha})`;
+                            } else {
+                                label.color = 'rgba(0, 255, 255, 0)';
+                            }
+                        }
+                    } else {
+                        label.color = 'rgba(0, 255, 255, 0)';
                     }
                 }
             });
@@ -181,6 +233,23 @@
                 
                 if (newHash !== currentGraphHash) {
                     currentGraphHash = newHash;
+                    
+                    // Map how many connections each node has before passing data to the graph
+                    const nodeDegree = {};
+                    data.links.forEach(link => {
+                        const source = typeof link.source === 'object' ? link.source.id : link.source;
+                        const target = typeof link.target === 'object' ? link.target.id : link.target;
+                        nodeDegree[source] = (nodeDegree[source] || 0) + 1;
+                        nodeDegree[target] = (nodeDegree[target] || 0) + 1;
+                    });
+
+                    // Inject the calculated size into the node data
+                    data.nodes.forEach(node => {
+                        const links = nodeDegree[node.id] || 0;
+                        // Min size 3, max size 12. Scales up by 1.2 per connection.
+                        node.val = Math.max(3, Math.min(links * 1.2, 12)); 
+                    });
+
                     Graph.graphData(data);
                 }
             } catch (e) {}
@@ -198,7 +267,6 @@
                 statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
                 
                 if (data.memory && data.memory.length > 0) {
-                    // Extract only the last 6 items
                     const recentMemory = data.memory.slice(-6);
                     
                     const log = recentMemory.map(m => {
@@ -233,7 +301,7 @@
                 msgDiv.innerText = `USER: ${text}`;
             } else if (role === 'ai') {
                 msgDiv.className = 'msg-ai';
-                msgDiv.innerText = `CORE: ${text}`; // innerText strictly enforces raw text output
+                msgDiv.innerText = `CORE: ${text}`; 
             } else {
                 msgDiv.className = 'msg-sys';
                 msgDiv.innerText = text;
@@ -250,7 +318,6 @@
                 
                 appendMessage('user', text);
                 
-                // Remove the "Awaiting Input" placeholder if it exists
                 const sysMsg = chatLog.querySelector('.msg-sys');
                 if (sysMsg) sysMsg.remove();
 
