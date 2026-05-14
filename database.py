@@ -236,6 +236,11 @@ class DatabaseManager:
         cursor.execute("INSERT INTO edges (source_id, target_id, relationship) VALUES (?, ?, ?)", 
                        (s_id, t_id, relationship))
         self.conn.commit()
+        
+        # The semantic meaning of both nodes has changed. We must update their vector embeddings.
+        self.vector.upsert_node_vector(source_uid, self.get_node_context(source_uid))
+        self.vector.upsert_node_vector(target_uid, self.get_node_context(target_uid))
+        
         return f"Link created: {source_uid} -> {relationship} -> {target_uid}"
     
     def delete_node(self, uid: str):

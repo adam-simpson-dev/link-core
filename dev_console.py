@@ -19,27 +19,56 @@ def send_command(tool_name, args):
 
 def main():
     print(f"[*] LINK-CORE Remote Active | Target: {API_URL}")
+    print("[*] Aliases: 'lore <query>', 'remove <uid>', 'wipe lore'")
+    
     while True:
         cmd = input("LINK-CORE > ").strip()
+        if not cmd: continue
         if cmd.lower() in ["exit", "quit"]: break
         
-        try:
-            parts = cmd.split(" ", 1)
-            tool = parts[0]
-            args = json.loads(parts[1]) if len(parts) > 1 else {}
+        parts = cmd.split(" ", 1)
+        base_cmd = parts[0].lower()
+        arg_str = parts[1] if len(parts) > 1 else ""
+        
+        # --- HUMAN ALIAS ROUTER ---
+        if base_cmd == "lore":
+            tool = "get_context"
+            args = {"keywords": arg_str.split()}
             
-            # Direct execution
+        elif base_cmd == "remove":
+            tool = "delete_node"
+            args = {"uid": arg_str.strip()}
+            
+        elif base_cmd == "wipe" and arg_str.strip() == "lore":
+            confirm = input("[!] CRITICAL: This will destroy all memory. Proceed? [y/N]: ")
+            if confirm.lower() == 'y':
+                tool = "wipe_database"
+                args = {"confirm_wipe": True}
+            else:
+                print("[-] Wipe aborted.")
+                continue
+                
+        else:
+            # Fallback to standard explicit API calls if JSON is provided
+            tool = base_cmd
+            try:
+                args = json.loads(arg_str) if arg_str else {}
+            except json.JSONDecodeError:
+                print("[-] Invalid command alias or JSON payload.")
+                continue
+        
+        # --- EXECUTION ---
+        try:
             response = send_command(tool, args)
             result_data = response.get("result", {})
 
-            # Handle Display (Extract the 'data' or show the error)
             if result_data.get("status") == "executed":
                 print(f"[*] Result:\n{result_data.get('data')}")
             else:
                 print(f"[!] Error: {result_data.get('message', 'Unknown failure')}")
-            
+                
         except Exception as e:
-            print(f"[!] Input Error: {e}. Format: tool_name {{'arg': 'val'}}")
+            print(f"[FATAL] Connection to Core failed: {e}")
 
 if __name__ == "__main__":
     main()
