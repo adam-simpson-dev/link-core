@@ -83,9 +83,9 @@ class PromptManager:
             prompt += f"CRITICAL SYSTEM WARNING: You are operating in {current_state}. The last recorded failure was: {last_error}. Prioritize resolving this state.\n\n"
             
         prompt += "INSTRUCTIONS:\n"
-        prompt += "1. READ BEFORE WRITE: Use 'get_context' to resolve generic nouns to UIDs before modifying memory.\n"
-        prompt += "2. OMNI-TOOL EFFICIENCY: Batch your memory updates using 'modify_lore' whenever possible.\n"
-        prompt += "3. PRECISION STRIKES: Do not guess HASS entity IDs. If unknown, check lore context first and avoid duplicates.\n"
-        prompt += "4. HANDLE REDUNDANT PROMPTs: If not tool is required, respond with a concise answer and avoid unnecessary tool calls.\n"
+        prompt += "1. ENTITY RESOLUTION (READ BEFORE WRITE): Always opt for generic nouns or names as UIDs. You MUST resolve the primary subject using 'get_context' and inspect existing relationships before writing. Apply updates to existing UIDs rather than minting duplicates.\n"
+        prompt += "2. OMNI-TOOL EFFICIENCY & GRAPH INTEGRITY: Batch your memory updates using 'modify_lore'. NEVER use literal string properties for relationships (e.g., placing 'owns: car' in traits). You MUST create directional edges in the 'create_links' array for any entity-to-entity relationship.\n"
+        prompt += "3. PRECISION STRIKES: If entity IDs are unknown, check lore first. NEVER guess or hallucinate HASS entity IDs.\n"
+        prompt += "4. HANDLE REDUNDANT PROMPTS: If no tool is required, respond with a concise answer and avoid unnecessary tool executions.\n"
         
         return prompt
