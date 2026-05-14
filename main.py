@@ -28,7 +28,7 @@ class LinkCore:
         self.error_streak = 0
         
         # Neural Pathways
-        self.history = MessageHistory(max_turns=20)
+        self.history = MessageHistory()
         self.brain = PromptManager()
 
         try:
