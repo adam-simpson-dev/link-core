@@ -46,7 +46,7 @@
         </div>
         <div class="box">
             <h2>Active Memory</h2>
-            <div id="memory-log" style="font-size: 11px; height: 180px; overflow: hidden; line-height: 1.4; display: flex; flex-direction: column; justify-content: flex-end;"></div>
+            <div id="memory-log" style="font-size: 11px; height: 240px; overflow: hidden; line-height: 1.4; display: flex; flex-direction: column; justify-content: flex-end;"></div>
         </div>
     </div>
 
@@ -125,9 +125,9 @@
             .linkColor(() => 'rgba(0, 255, 255, 0.5)')
             .linkWidth(0.5)
             .linkDirectionalParticles(d => Math.floor(Math.random() * 2) + 1)
-            .linkDirectionalParticleWidth(1.2)
+            .linkDirectionalParticleWidth(1.0)
             .linkDirectionalParticleColor(() => '#00ffff')
-            .linkDirectionalParticleSpeed(d => 0.02 + Math.random() * 0.008);
+            .linkDirectionalParticleSpeed(d => 0.012 + Math.random() * 0.012);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         Graph.scene().add(ambientLight);
@@ -267,15 +267,33 @@
                 statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
                 
                 if (data.memory && data.memory.length > 0) {
-                    const recentMemory = data.memory.slice(-6);
+                    // Filter out chat. Only keep System observations or AI Tool Calls.
+                    const agenticMemory = data.memory.filter(m => m.role === 'system' || m.tool_calls);
+                    
+                    // Extract only the last 6 operational events
+                    const recentMemory = agenticMemory.slice(-6);
                     
                     const log = recentMemory.map(m => {
-                        const role = m.role ? m.role.toUpperCase() : "SYS";
-                        const content = m.content || "Executing backend tool...";
+                        let role = "SYS";
+                        let content = "Executing operational logic...";
+                        
+                        if (m.tool_calls && m.tool_calls.length > 0) {
+                            // It's an AI tool command
+                            role = "CORE";
+                            content = `INITIATE: ${m.tool_calls[0].tool_name}`;
+                        } else if (m.content) {
+                            // It's a system database return or error
+                            role = "SYS";
+                            // Truncate heavy GraphRAG payloads for the UI
+                            content = m.content.length > 80 ? m.content.substring(0, 77) + "..." : m.content;
+                            // Strip newlines so it flows cleanly in the small box
+                            content = content.replace(/\n/g, ' | '); 
+                        }
+                        
                         return `> [${role}] ${content}`;
                     }).join('<br><br>');
                     
-                    document.getElementById('memory-log').innerHTML = log;
+                    document.getElementById('memory-log').innerHTML = log || "<span style='color: #448888;'>Awaiting Operational Logic...</span>";
                 } else {
                     document.getElementById('memory-log').innerHTML = "<span style='color: #448888;'>Awaiting Agentic Interaction...</span>";
                 }
