@@ -31,6 +31,15 @@ def main():
         arg_str = parts[1] if len(parts) > 1 else ""
         
         # --- HUMAN ALIAS ROUTER ---
+        if base_cmd in ["help", "-h", "--help", "?"]:
+            print("\n--- LINK-CORE COMMAND MANUAL ---")
+            print("lore <keywords>    | Semantic & graph lookup (e.g., 'lore spaceship')")
+            print("remove <uid>       | Permanent node deletion (e.g., 'remove dr_smith')")
+            print("wipe lore          | Full database factory reset (Safety locked)")
+            print("<tool> <json>      | Direct API execution (e.g., 'get_node_data {\"uid\":\"john\"}')")
+            print("exit / quit        | Terminate uplink\n")
+            continue # Skip execution for the help command
+            
         if base_cmd == "lore":
             tool = "get_context"
             args = {"keywords": arg_str.split()}
