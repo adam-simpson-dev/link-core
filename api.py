@@ -82,15 +82,14 @@ async def get_graph():
     
     return {"nodes": nodes, "links": links}
 
-@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.png", include_in_schema=False)
 async def favicon():
     import os
-    # Use an absolute path check
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(base_dir, "static", "favicon.ico")
+    file_path = os.path.join(base_dir, "static", "favicon.png")
     
     if os.path.exists(file_path):
-        return FileResponse(file_path, media_type="image/x-icon")
+        return FileResponse(file_path, media_type="image/png")
     return Response(status_code=204)
 
 @app.post("/command")
