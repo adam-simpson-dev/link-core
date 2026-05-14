@@ -87,7 +87,8 @@ async def favicon():
     import os
     file_path = "static/favicon.ico"
     if os.path.exists(file_path):
-        return FileResponse(file_path)
+        # Force the correct MIME type for .ico files
+        return FileResponse(file_path, media_type="image/x-icon")
     return Response(status_code=204)
 
 @app.post("/command")
