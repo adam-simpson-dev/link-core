@@ -51,6 +51,16 @@ async def health():
         "version": "1.2.0"
     }
 
+@app.get("/logs", include_in_schema=False)
+async def view_logs():
+    """Serves the backend log file directly to the browser as plain text."""
+    import os
+    file_path = "link-core.log"
+    if os.path.exists(file_path):
+        # 'text/plain' forces the browser to display it rather than triggering a download
+        return FileResponse(file_path, media_type="text/plain")
+    return {"error": "Log file not found or has not been generated yet."}
+
 @app.get("/api/telemetry")
 async def get_telemetry():
     """Feeds GUI State Box and Memory Box."""
