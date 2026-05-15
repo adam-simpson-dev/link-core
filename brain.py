@@ -12,8 +12,6 @@ class MessageHistory:
         self.history = []
         self.max_tokens = max_tokens
 
-
-
     def _estimate_tokens(self, text: str) -> float:
         """Fast heuristic for token weight."""
         return len(str(text).split()) * 1.3

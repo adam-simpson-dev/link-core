@@ -36,11 +36,14 @@ def main():
             print("lore <keywords>    | Semantic & graph lookup (e.g., 'lore object')")
             print("remove <uid>       | Permanent node deletion (e.g., 'remove object')")
             print("wipe lore          | Full database factory reset (Safety locked)")
-            print("<tool> <json>      | Direct API execution (e.g., 'get_node_data {\"uid\":\"object\"}')")
+            print("areas              | Fetch HASS area map (Room structure)")
+            print("inspect <entity>   | Fetch HASS entity state (e.g., 'inspect light.kitchen')")
+            print("control <args>     | e.g., 'control light turn_on light.kitchen'")
+            print("event <name>       | Trigger HASS event (e.g., 'event protocol_alpha')")
             print("exit / quit        | Terminate uplink\n")
             continue # Skip execution for the help command
             
-        if base_cmd == "lore":
+        elif base_cmd == "lore":
             tool = "get_context"
             args = {"keywords": arg_str.split()}
             
@@ -56,9 +59,54 @@ def main():
             else:
                 print("[-] Wipe aborted.")
                 continue
-                
+
+        # --- HASS DIAGNOSTIC ALIASES ---
+        elif base_cmd == "areas":
+            tool = "get_area_map"
+            args = {}
+
+        elif base_cmd == "inspect":
+            tool = "inspect_entity"
+            parts = arg_str.split(" ", 1)
+            args = {"entity_id": parts[0]}
+            # If the user provides a second argument, treat it as the ISO history timestamp
+            if len(parts) > 1:
+                args["start_time_iso"] = parts[1]
+
+        elif base_cmd == "control":
+            # Syntax: control light turn_on light.kitchen_main {"brightness": 255}
+            tool = "control_home"
+            parts = arg_str.split(" ", 3)
+            if len(parts) >= 3:
+                args = {
+                    "domain": parts[0],
+                    "service": parts[1],
+                    "entity_id": parts[2]
+                }
+                # Safely parse optional kwargs (like brightness or colors)
+                if len(parts) == 4: 
+                    try:
+                        args["kwargs"] = json.loads(parts[3])
+                    except json.JSONDecodeError:
+                        print("[-] Invalid JSON for kwargs. Executing without kwargs.")
+                        continue
+            else:
+                print("[-] Usage: control <domain> <service> <entity_id> [kwargs_json]")
+                continue
+
+        elif base_cmd == "event":
+            tool = "fire_home_event"
+            parts = arg_str.split(" ", 1)
+            args = {"event_name": parts[0]}
+            if len(parts) > 1:
+                try:
+                    args["event_data"] = json.loads(parts[1])
+                except json.JSONDecodeError:
+                    print("[-] Invalid JSON for event_data.")
+                    continue
+
         else:
-            # Fallback to standard explicit API calls if JSON is provided
+            # Fallback to standard explicit API calls if raw JSON is provided
             tool = base_cmd
             try:
                 args = json.loads(arg_str) if arg_str else {}
