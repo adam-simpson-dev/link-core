@@ -15,72 +15,76 @@ class DatabaseManager:
         cursor = self.conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS nodes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                uid TEXT UNIQUE NOT NULL,
-                label TEXT NOT NULL,
-                display_name TEXT
+                uid TEXT PRIMARY KEY,
+                node_type TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                aliases TEXT DEFAULT '[]',
+                system_pointers TEXT DEFAULT '{}',
+                traits TEXT DEFAULT '{}'
             )
         ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS properties (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                target_type TEXT NOT NULL DEFAULT 'NODE',
-                target_id INTEGER NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                FOREIGN KEY (target_id) REFERENCES nodes (id) ON DELETE CASCADE
-            )
-        ''')
+        
+        # Edges map strictly to the UID text primary keys
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS edges (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id INTEGER NOT NULL,
-                target_id INTEGER NOT NULL,
+                source_uid TEXT NOT NULL,
+                target_uid TEXT NOT NULL,
                 relationship TEXT NOT NULL,
-                FOREIGN KEY (source_id) REFERENCES nodes (id) ON DELETE CASCADE,
-                FOREIGN KEY (target_id) REFERENCES nodes (id) ON DELETE CASCADE
+                FOREIGN KEY (source_uid) REFERENCES nodes (uid) ON DELETE CASCADE,
+                FOREIGN KEY (target_uid) REFERENCES nodes (uid) ON DELETE CASCADE
             )
         ''')
         self.conn.commit()
 
-    def upsert_lore(self, target_uid: str, key: str, value: str, target_type='NODE'):
-        """Standardized property setter"""
+    def upsert_lore(self, uid: str, node_type: str = "concept", display_name: str = None, new_traits: dict = None, new_pointers: dict = None, aliases: list = None):
+        """Merges volatile JSON payloads without destroying the Identity Envelope."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        res = cursor.fetchone()
+        cursor.execute("SELECT node_type, display_name, aliases, system_pointers, traits FROM nodes WHERE uid = ?", (uid,))
+        row = cursor.fetchone()
         
-        if not res:
-            display_name = target_uid.replace("_", " ").title()
-            cursor.execute("INSERT INTO nodes (uid, label, display_name) VALUES (?, ?, ?)", 
-                           (target_uid, "Entity", display_name))
-            n_id = cursor.lastrowid
-        else:
-            n_id = res[0]
+        import json
+        if row:
+            db_type, db_name, db_aliases, db_pointers, db_traits = row
+            
+            merged_traits = json.loads(db_traits) if db_traits else {}
+            if new_traits: 
+                merged_traits.update(new_traits)
+                # Null-stripping: Allow the AI to delete traits by passing null
+                merged_traits = {k: v for k, v in merged_traits.items() if v is not None}
+            
+            merged_pointers = json.loads(db_pointers) if db_pointers else {}
+            if new_pointers: 
+                merged_pointers.update(new_pointers)
+                # Null-stripping for pointers
+                merged_pointers = {k: v for k, v in merged_pointers.items() if v is not None}
+            
+            final_aliases = json.dumps(aliases) if aliases is not None else db_aliases
+            final_name = display_name or db_name
+            final_type = node_type if node_type != "concept" else db_type
 
-        cursor.execute("INSERT OR REPLACE INTO properties (target_type, target_id, key, value) VALUES (?, ?, ?, ?)", 
-                       (target_type, n_id, key, value))
+            cursor.execute("""
+                UPDATE nodes 
+                SET node_type = ?, display_name = ?, aliases = ?, system_pointers = ?, traits = ?
+                WHERE uid = ?
+            """, (final_type, final_name, final_aliases, json.dumps(merged_pointers), json.dumps(merged_traits), uid))
+        else:
+            final_name = display_name or uid.replace("_", " ").title()
+            final_aliases = json.dumps(aliases or [])
+            merged_pointers = json.dumps(new_pointers or {})
+            merged_traits = json.dumps(new_traits or {})
+            
+            cursor.execute("""
+                INSERT INTO nodes (uid, node_type, display_name, aliases, system_pointers, traits) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (uid, node_type, final_name, final_aliases, merged_pointers, merged_traits))
+
         self.conn.commit()
         
-        # Refresh Vector Index
-        self.vector.upsert_node_vector(target_uid, self.get_node_context(target_uid))
-        return f"Updated {target_uid}: {key}={value}"
-
-    def batch_update_lore(self, entities: list = None, relationships: list = None):
-        """Processes bulk data."""
-        log = []
-        if entities:
-            for entity in entities:
-                uid = entity.get("uid")
-                props = entity.get("properties", {})
-                for key, value in props.items():
-                    self.upsert_lore(uid, key, str(value))
-                log.append(uid)
-            
-        if relationships:
-            for rel in relationships:
-                self.create_relationship(rel.get("source_uid"), rel.get("target_uid"), rel.get("relationship"))
-                
-        return f"Batch sync complete. Nodes affected: {len(log)}"
+        # Shield ChromaDB from semantic noise
+        envelope_text = self.generate_semantic_envelope(uid, final_name, final_aliases)
+        self.vector.upsert_node_vector(uid, envelope_text)
+        return f"Synchronized node: {uid}"
 
     def get_all_nodes(self):
         """Feeds the WebGL UI node graph."""
@@ -91,12 +95,7 @@ class DatabaseManager:
     def get_all_edges(self):
         """Feeds the WebGL UI edge graph."""
         cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT e.id, s.uid, t.uid, e.relationship 
-            FROM edges e
-            JOIN nodes s ON e.source_id = s.id
-            JOIN nodes t ON e.target_id = t.id
-        """)
+        cursor.execute("SELECT id, source_uid, target_uid, relationship FROM edges")
         return cursor.fetchall()
 
     def _estimate_tokens(self, text: str) -> float:
@@ -141,105 +140,90 @@ class DatabaseManager:
 
         return "\n".join(final_context_blocks) if final_context_blocks else "Empty LORE."
 
+    def generate_semantic_envelope(self, uid: str, display_name: str, aliases: str) -> str:
+        """
+        Semantic Noise Isolation.
+        Forces ChromaDB to index ONLY the identity envelope, blinding it to volatile traits.
+        """
+        import json
+        try:
+            alias_list = json.loads(aliases) if aliases else []
+            alias_str = ", ".join(alias_list) if alias_list else "None"
+        except Exception:
+            alias_str = "None"
+            
+        return f"UID: {uid} | Name: {display_name} | Aliases: {alias_str}"
+
     def get_node_data(self, uid: str) -> dict:
-        """Feeds the frontend GUI Inspector panel. Over-delivers keys for UI compatibility."""
+        """Feeds the Panopticon GUI. Unpacks JSON payloads into UI-compatible arrays."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, display_name, label FROM nodes WHERE uid = ?", (uid,))
+        cursor.execute("SELECT display_name, node_type, system_pointers, traits FROM nodes WHERE uid = ?", (uid,))
         node = cursor.fetchone()
         
         if not node:
             return {"error": f"Node {uid} not found"}
             
-        n_id, display_name, label = node
+        display_name, node_type, sys_pointers, traits = node
         
-        # Fetch Properties
-        cursor.execute("SELECT key, value FROM properties WHERE target_id = ? AND target_type = 'NODE'", (n_id,))
-        raw_props = cursor.fetchall()
-        properties_array = [{"key": row[0], "value": row[1]} for row in raw_props]
+        import json
+        try:
+            traits_dict = json.loads(traits) if traits else {}
+            pointers_dict = json.loads(sys_pointers) if sys_pointers else {}
+        except json.JSONDecodeError:
+            traits_dict, pointers_dict = {}, {}
 
-        # Fetch Outgoing Edges
-        cursor.execute("""
-            SELECT e.relationship, n.uid, n.display_name 
-            FROM edges e 
-            JOIN nodes n ON e.target_id = n.id 
-            WHERE e.source_id = ?
-        """, (n_id,))
-        outgoing = [{"relationship": row[0], "target_uid": row[1], "target_name": row[2]} for row in cursor.fetchall()]
+        properties_array = [{"key": k, "value": str(v)} for k, v in traits_dict.items()]
+        for k, v in pointers_dict.items():
+            properties_array.append({"key": f"SYS_{k.upper()}", "value": str(v)})
+
+        # Edges are strictly text UID matching
+        cursor.execute("SELECT relationship, target_uid FROM edges WHERE source_uid = ?", (uid,))
+        outgoing = [{"relationship": row[0], "target_uid": row[1], "target_name": row[1]} for row in cursor.fetchall()]
         
-        # Fetch Incoming Edges
-        cursor.execute("""
-            SELECT e.relationship, n.uid, n.display_name 
-            FROM edges e 
-            JOIN nodes n ON e.source_id = n.id 
-            WHERE e.target_id = ?
-        """, (n_id,))
-        incoming = [{"relationship": row[0], "source_uid": row[1], "source_name": row[2]} for row in cursor.fetchall()]
+        cursor.execute("SELECT relationship, source_uid FROM edges WHERE target_uid = ?", (uid,))
+        incoming = [{"relationship": row[0], "source_uid": row[1], "source_name": row[1]} for row in cursor.fetchall()]
 
         return {
-            "id": uid,
-            "uid": uid,
-            "name": display_name,
-            "display_name": display_name,
-            "label": label,
-            "class": label,
+            "id": uid, "uid": uid, "name": display_name, "display_name": display_name,
+            "label": node_type, "class": node_type,
             "properties": properties_array,
-            "outgoing_edges": outgoing,
-            "incoming_edges": incoming
+            "outgoing_edges": outgoing, "incoming_edges": incoming
         }
 
     def get_node_context(self, uid: str) -> str:
         """Pulls properties and strictly Depth-1 edges."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, display_name FROM nodes WHERE uid = ?", (uid,))
+        cursor.execute("SELECT node_type, display_name, system_pointers, traits FROM nodes WHERE uid = ?", (uid,))
         node = cursor.fetchone()
         if not node: return ""
         
-        n_id, name = node
-
-        # Property search
-        cursor.execute("SELECT key, value FROM properties WHERE target_id = ? AND target_type = 'NODE'", (n_id,))
-        props = [f"{row[0]}: {row[1]}" for row in cursor.fetchall()]
+        n_type, name, pointers, traits = node
         
-        # Edges (Depth 1)
-        cursor.execute("""
-            SELECT e.relationship, n.uid FROM edges e 
-            JOIN nodes n ON e.target_id = n.id WHERE e.source_id = ?
-        """, (n_id,))
+        cursor.execute("SELECT relationship, target_uid FROM edges WHERE source_uid = ?", (uid,))
         outgoing = [f"-[{row[0]}]-> {row[1]}" for row in cursor.fetchall()]
 
-        cursor.execute("""
-            SELECT e.relationship, n.uid FROM edges e 
-            JOIN nodes n ON e.source_id = n.id WHERE e.target_id = ?
-        """, (n_id,))
+        cursor.execute("SELECT relationship, source_uid FROM edges WHERE target_uid = ?", (uid,))
         incoming = [f"<-[{row[0]}]- {row[1]}" for row in cursor.fetchall()]
         
         return (
-            f"--- NODE: {uid} ({name}) ---\n"
-            f"Properties: {', '.join(props) if props else 'None'}\n"
+            f"--- NODE ({n_type.upper()}): {uid} ({name}) ---\n"
+            f"System Pointers: {pointers}\n"
+            f"Traits: {traits}\n"
             f"Outgoing Links: {', '.join(outgoing) if outgoing else 'None'}\n"
             f"Incoming Links: {', '.join(incoming) if incoming else 'None'}\n"
         )
 
     def create_relationship(self, source_uid, target_uid, relationship):
         cursor = self.conn.cursor()
-        # Ensure nodes exist
+        # Enforce strict existence. No auto-minting ghost nodes.
         for uid in [source_uid, target_uid]:
-            cursor.execute("SELECT id FROM nodes WHERE uid = ?", (uid,))
+            cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (uid,))
             if not cursor.fetchone():
-                self.upsert_lore(uid, "status", "initialized")
+                raise ValueError(f"Relational Error: Node '{uid}' does not exist. Upsert it first.")
         
-        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (source_uid,))
-        s_id = cursor.fetchone()[0]
-        cursor.execute("SELECT id FROM nodes WHERE uid = ?", (target_uid,))
-        t_id = cursor.fetchone()[0]
-        
-        cursor.execute("INSERT INTO edges (source_id, target_id, relationship) VALUES (?, ?, ?)", 
-                       (s_id, t_id, relationship))
+        cursor.execute("INSERT INTO edges (source_uid, target_uid, relationship) VALUES (?, ?, ?)", 
+                       (source_uid, target_uid, relationship))
         self.conn.commit()
-        
-        # The semantic meaning of both nodes has changed. We must update their vector embeddings.
-        self.vector.upsert_node_vector(source_uid, self.get_node_context(source_uid))
-        self.vector.upsert_node_vector(target_uid, self.get_node_context(target_uid))
         
         return f"Link created: {source_uid} -> {relationship} -> {target_uid}"
     

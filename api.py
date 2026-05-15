@@ -1,23 +1,23 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import logging
+from core_logger import setup_core_logger
 from main import LinkCore
 
-# Standardized logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+setup_core_logger()
 logger = logging.getLogger("LINK-API")
 
 # Log Silencer
 class FilterHeartbeatLogs(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, record: logger.LogRecord) -> bool:
         msg = record.getMessage()
         # Drop the log if it contains either of the high-frequency polling endpoints
         return msg.find("/api/telemetry") == -1 and msg.find("/api/graph") == -1
 
-logging.getLogger("uvicorn.access").addFilter(FilterHeartbeatLogs())
+logger.getLogger("uvicorn.access").addFilter(FilterHeartbeatLogs())
 
 # Lifespan management: The modern replacement for on_event
 @asynccontextmanager
@@ -69,7 +69,10 @@ async def get_telemetry():
 @app.get("/api/node/{uid}")
 async def get_node_details(uid: str):
     """Feeds GUI Inspector box."""
-    return core.db.get_node_data(uid)
+    data = core.db.get_node_data(uid)
+    if "error" in data:
+        raise HTTPException(status_code=404, detail=data["error"])
+    return data
 
 @app.get("/api/graph")
 async def get_graph():

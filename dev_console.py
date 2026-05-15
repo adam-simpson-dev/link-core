@@ -36,13 +36,30 @@ def main():
             print("lore <keywords>    | Semantic & graph lookup (e.g., 'lore object')")
             print("remove <uid>       | Permanent node deletion (e.g., 'remove object')")
             print("wipe lore          | Full database factory reset (Safety locked)")
+            print("health             | Poll system state and circuit breaker")
+            print("unlock breaker     | Emergency breaker reset (recovers from fatal errors)")
             print("areas              | Fetch HASS area map (Room structure)")
             print("inspect <entity>   | Fetch HASS entity state (e.g., 'inspect light.kitchen')")
             print("control <args>     | e.g., 'control light turn_on light.kitchen'")
             print("event <name>       | Trigger HASS event (e.g., 'event protocol_alpha')")
             print("exit / quit        | Terminate uplink\n")
             continue # Skip execution for the help command
-            
+        
+        elif base_cmd == "health":
+            try:
+                res = requests.get(f"{API_URL}/health")
+                if res.status_code == 200:
+                    data = res.json()
+                    print(f"[*] SYSTEM STATUS: {data.get('status', 'UNKNOWN')}")
+                    print(f"[*] VERSION: {data.get('version', 'N/A')}")
+                    if data.get('last_error'):
+                        print(f"[!] LAST ERROR: {data.get('last_error')}")
+                else:
+                    print(f"[-] Health endpoint returned {res.status_code}")
+            except Exception as e:
+                print(f"[FATAL] Health check failed: {e}")
+            continue
+
         elif base_cmd == "lore":
             tool = "get_context"
             args = {"keywords": arg_str.split()}
@@ -59,6 +76,10 @@ def main():
             else:
                 print("[-] Wipe aborted.")
                 continue
+
+        elif base_cmd == "unlock" and arg_str.strip() == "breaker":
+            tool = "reset_breaker"
+            args = {}
 
         # --- HASS DIAGNOSTIC ALIASES ---
         elif base_cmd == "areas":
@@ -120,7 +141,27 @@ def main():
             result_data = response.get("result", {})
 
             if result_data.get("status") == "executed":
-                print(f"[*] Result:\n{result_data.get('data')}")
+                data = result_data.get('data')
+                print("[*] Result:")
+                
+                # Human-readable dictionary unpacking
+                if isinstance(data, dict):
+                    for key, val in data.items():
+                        if isinstance(val, list):
+                            print(f"  > {key}:")
+                            for item in val:
+                                print(f"      - {item}")
+                        else:
+                            print(f"  > {key}: {val}")
+                            
+                # Human-readable list unpacking
+                elif isinstance(data, list):
+                    for item in data:
+                        print(f"  > {item}")
+                        
+                # Standard string fallback
+                else:
+                    print(f"  > {data}")
             else:
                 print(f"[!] Error: {result_data.get('message', 'Unknown failure')}")
                 
