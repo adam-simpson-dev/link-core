@@ -10,15 +10,6 @@ from main import LinkCore
 setup_core_logger()
 logger = logging.getLogger("LINK-API")
 
-# Log Silencer
-class FilterHeartbeatLogs(logging.Filter):
-    def filter(self, record: logger.LogRecord) -> bool:
-        msg = record.getMessage()
-        # Drop the log if it contains either of the high-frequency polling endpoints
-        return msg.find("/api/telemetry") == -1 and msg.find("/api/graph") == -1
-
-logger.getLogger("uvicorn.access").addFilter(FilterHeartbeatLogs())
-
 # Lifespan management: The modern replacement for on_event
 @asynccontextmanager
 async def lifespan(app: FastAPI):

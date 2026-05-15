@@ -151,7 +151,7 @@ class LinkCore:
         
         # Fallback Check: Did the LLM bypass the abstraction layer?
         if "." in uid and not uid.startswith("node_"):
-            logging.warning(f"[!] Direct hardware addressing detected for '{uid}'. Activating Fallback Router.")
+            logger.warning(f"[!] Direct hardware addressing detected for '{uid}'. Activating Fallback Router.")
             domain = uid.split(".")[0]
             service_data = {"entity_id": uid}
             service_data.update(kwargs)
@@ -177,7 +177,7 @@ class LinkCore:
 
         # Future Blackboard Architecture Anchor: Safety Intercept Block
         if node_type == "security_hardware":
-            logging.warning(f"[!] Security-critical intercept triggered for asset: {uid}")
+            logger.warning(f"[!] Security-critical intercept triggered for asset: {uid}")
             return f"Execution Aborted: Intent routing for '{uid}' requires secondary authorization."
 
         try:
@@ -195,7 +195,7 @@ class LinkCore:
         service_data = {"entity_id": hass_id}
         service_data.update(kwargs)
         
-        logging.info(f"[*] Dispatching Abracted HA Call: {domain}.{service} -> {service_data}")
+        logger.info(f"[*] Dispatching Abracted HA Call: {domain}.{service} -> {service_data}")
         success = self.hass.call_service(domain, service, service_data)
         
         if success:
@@ -212,7 +212,7 @@ class LinkCore:
                 uid = node.get("uid")
                 node_type = node.get("node_type")
                 if not uid or node_type not in allowed_types:
-                    logging.warning(f"Skipped invalid node upsert: {uid} (Type: {node_type})")
+                    logger.warning(f"Skipped invalid node upsert: {uid} (Type: {node_type})")
                     continue
                 
                 self.db.upsert_lore(
@@ -244,7 +244,7 @@ class LinkCore:
 
         # Fallback Check: Did the LLM bypass the abstraction layer?
         if "." in uid and not uid.startswith("node_"):
-            logging.warning(f"[!] Direct hardware inspection tracking for '{uid}'. Fallback active.")
+            logger.warning(f"[!] Direct hardware inspection tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()
             cursor.execute("SELECT system_pointers FROM nodes WHERE uid = ?", (uid,))
@@ -292,7 +292,7 @@ class LinkCore:
 
         # Fallback Check for unmapped automation hooks
         if not uid.startswith("node_"):
-            logging.warning(f"[!] Direct event execution tracking for '{uid}'. Fallback active.")
+            logger.warning(f"[!] Direct event execution tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()
             cursor.execute("SELECT node_type, system_pointers FROM nodes WHERE uid = ?", (uid,))
@@ -320,6 +320,6 @@ class LinkCore:
 
     def shutdown(self):
         """Graceful termination of database links."""
-        logging.info("[!] LINK-CORE Shutting down.")
+        logger.info("[!] LINK-CORE Shutting down.")
         if hasattr(self, 'db'):
             self.db.close()

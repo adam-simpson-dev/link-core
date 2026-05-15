@@ -1,6 +1,9 @@
 import sqlite3
 import logging
+from core_logger import setup_core_logger
 from vector_memory import VectorManager
+
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self, db_path="memory.sqlite"):
@@ -132,7 +135,7 @@ class DatabaseManager:
             
             # If adding this node blows the limit, halt expansion.
             if current_token_weight + block_weight > max_tokens:
-                logging.warning(f"[!] CONTEXT PRUNED: Hit {max_tokens} token limit at node '{uid}'.")
+                logger.warning(f"[!] CONTEXT PRUNED: Hit {max_tokens} token limit at node '{uid}'.")
                 break
                 
             final_context_blocks.append(node_data)
@@ -260,7 +263,7 @@ class DatabaseManager:
         )
 
         self.last_accessed_uids.clear()
-        logging.warning("[!] LORE GRAPH AND VECTOR MEMORY WIPED BY USER COMMAND.")
+        logger.warning("[!] LORE GRAPH AND VECTOR MEMORY WIPED BY USER COMMAND.")
         return "System memory reset to factory defaults. All nodes and vectors purged."
 
     def close(self):

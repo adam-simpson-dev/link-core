@@ -1,9 +1,12 @@
+import logging
+from core_logger import setup_core_logger
 import requests
 import os
 from dotenv import load_dotenv
 
 # Load the secrets from the .env file
 load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 class HassClient:
