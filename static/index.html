@@ -302,7 +302,9 @@
 
                     Graph.graphData(data);
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error("[!] Graph Sync Failed. Check API output:", e);
+            }
         }
 
         syncGraph();
@@ -318,7 +320,7 @@
                 
                 if (data.memory && data.memory.length > 0) {
                     // Filter out chat. Only keep System observations or AI Tool Calls.
-                    const agenticMemory = data.memory.filter(m => m.role === 'system' || m.tool_calls);
+                    const agenticMemory = data.memory.filter(m => m.role === 'system' || (m.role === 'model' && m.tool_calls));
                     
                     // Extract only the last 6 operational events
                     const recentMemory = agenticMemory.slice(-6);

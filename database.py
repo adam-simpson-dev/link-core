@@ -92,7 +92,7 @@ class DatabaseManager:
     def get_all_nodes(self):
         """Feeds the WebGL UI node graph."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT uid, label, display_name FROM nodes")
+        cursor.execute("SELECT uid, node_type, display_name FROM nodes")
         return cursor.fetchall()
 
     def get_all_edges(self):
