@@ -69,21 +69,21 @@ class PromptManager:
         # Establish the Temporal Anchor
         current_time_iso = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         day_of_week = datetime.now().strftime("%A")
-        
-        prompt = f"{self.system_persona}\n\n"
 
         # Inject the time anchor
-        prompt += f"TEMPORAL ANCHOR: It is currently {day_of_week}, {current_time_iso} local time. "
-        prompt += "Use this baseline to calculate 'start_time_iso' for history inspections.\n\n"
+        prompt = f"{self.system_persona}\n\n"
+        prompt += f"TEMPORAL ANCHOR: {day_of_week}, {current_time_iso} local time.\n\n"
 
         # INTRINSIC DIAGNOSTICS: The AI wakes up knowing if it's broken.        
         if current_state != "NOMINAL":
-            prompt += f"CRITICAL SYSTEM WARNING: You are operating in {current_state}. The last recorded failure was: {last_error}. Prioritize resolving this state.\n\n"
-            
-        prompt += "INSTRUCTIONS:\n"
-        prompt += "1. ENTITY RESOLUTION (READ BEFORE WRITE): Always opt for generic nouns or names as UIDs. You MUST resolve the primary subject using 'get_context' and inspect existing relationships before writing. Apply updates to existing UIDs rather than minting duplicates.\n"
-        prompt += "2. OMNI-TOOL EFFICIENCY & GRAPH INTEGRITY: Batch your memory updates using 'modify_lore'. NEVER use literal string properties for relationships (e.g., placing 'owns: car' in traits). You MUST create directional edges in the 'create_links' array for any entity-to-entity relationship.\n"
-        prompt += "3. PRECISION STRIKES: If entity IDs are unknown, check lore first. NEVER guess or hallucinate HASS entity IDs.\n"
-        prompt += "4. HANDLE REDUNDANT PROMPTS: If no tool is required, respond with a concise answer and avoid unnecessary tool executions.\n"
+            prompt += f"CRITICAL SYSTEM WARNING: Operating in {current_state}. Last failure: {last_error}. Prioritize resolution.\n\n"
+
+        prompt += "INSTRUCTIONS FOR LINK DATABASE SYSTEM:\n"
+        prompt += "1. HYBRID SCHEMA COMPLIANCE: UIDs must be snake_case. You are mathematically restricted to the provided `node_type` enum. Liberally apply `aliases` for vector recall.\n"
+        prompt += "2. MUTATION PROTOCOL (READ BEFORE WRITE): Query `get_context` to resolve entities before minting new nodes. Batch your updates via `modify_lore`.\n"
+        prompt += "3. THE JSON SANDBOX (`new_traits`): Never mint standalone nodes for simple properties. Inject user preferences, states, and observations strictly into the `new_traits` JSON payload.\n"
+        prompt += "4. RELATIONAL INTEGRITY: Entity-to-entity relationships require strict directional edges (`create_links`). Do not bury entity connections inside JSON traits.\n"
+        prompt += "5. HARDWARE ABSTRACTION: Never hallucinate HASS entity IDs. If an ID is unknown, query the graph to extract its `system_pointers`.\n"
+        prompt += "6. TOKEN CONSERVATION: If a query requires no system action or memory update, bypass tools entirely and deliver a direct, concise response.\n"
         
         return prompt
