@@ -76,60 +76,50 @@
     <script type="module">
         import * as THREE from 'https://esm.sh/three';
         import ForceGraph3D from 'https://esm.sh/3d-force-graph';
-        import SpriteText from 'https://esm.sh/three-spritetext';
 
-        // --- GRAPH ENGINE ---
+        // --- OPTIMIZED GRAPH ENGINE ---
         const elem = document.getElementById('3d-graph');
         const meshRegistry = {}; 
-        const baseColor = new THREE.Color(0x0088ff); 
-        const flashColor = new THREE.Color(0xffffff);
         let hoverNode = null; 
 
         const Graph = ForceGraph3D()(elem)
-            .nodeLabel(() => '') // We handle labels with custom sprites, so return empty string here
+            // NATIVE 2D TEXT RENDERING (Zero 3D overhead)
+            .nodeLabel(node => {
+                return `<div style="background: rgba(0, 15, 25, 0.9); border: 1px solid #00ffff; padding: 4px 8px; border-radius: 4px; color: #fff; font-size: 12px; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0,255,255,0.3);">
+                            ${node.name ? node.name.toUpperCase() : "UNKNOWN"}
+                        </div>`;
+            })
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
-                // NODE SCALING: Use the calculated 'val' from our syncGraph function (default to 4)
                 const size = node.val || 4;
 
-                const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x004488, shininess: 100 });
+                // Static Core (No constant lerping)
+                const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x002255, shininess: 80 });
                 const core = new THREE.Mesh(new THREE.SphereGeometry(size), coreMaterial);
-                core.userData = { phase: Math.random() * Math.PI * 2, speed: 0.01 + Math.random() * 0.02 };
                 group.add(core);
 
+                // Dormant Pulse Ring
                 const pulseMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0, depthWrite: false });
                 const pulse = new THREE.Mesh(new THREE.SphereGeometry(size), pulseMaterial);
-                pulse.userData = { progress: 0, speed: 0.02, isPinging: false };
+                pulse.userData = { progress: 0, speed: 0.03, isPinging: false };
                 group.add(pulse);
-
-                // 3D TEXT HALO: Add a hidden text sprite above the node
-                const label = new SpriteText(node.name ? node.name.toUpperCase() : "UNKNOWN");
-                label.color = 'rgba(0, 255, 255, 0)'; // Start completely invisible (alpha 0)
-                label.textHeight = Math.max(3, size * 0.6); // Scale text slightly based on node size
-                label.position.y = size + 4; // Hover slightly above the sphere
-                group.add(label);
 
                 meshRegistry[node.id] = group; 
                 return group;
             })
             .onNodeHover(node => {
-                // Track which node the mouse is currently looking at
                 hoverNode = node || null;
                 elem.style.cursor = node ? 'pointer' : null;
             })
             .onNodeClick(node => fetchNodeData(node.id))
             .onBackgroundClick(() => {
-                // DESELECT: This hides the properties box when clicking empty space
                 document.getElementById('inspector-box').style.display = 'none';
             })
-            .linkColor(() => 'rgba(0, 255, 255, 0.5)')
-            .linkWidth(0.5)
-            .linkDirectionalParticles(d => Math.floor(Math.random() * 2) + 1)
-            .linkDirectionalParticleWidth(1.0)
-            .linkDirectionalParticleColor(() => '#00ffff')
-            .linkDirectionalParticleSpeed(d => 0.012 + Math.random() * 0.012);
+            // STATIC EDGES (No particles)
+            .linkColor(() => 'rgba(0, 255, 255, 0.3)')
+            .linkWidth(0.5);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         Graph.scene().add(ambientLight);
 
         // --- CINEMATIC IDLE STATE ---
@@ -145,9 +135,6 @@
             interactionTimeout = setTimeout(() => {
                 isIdle = true;
                 idleStartTime = Date.now();
-                
-                // The Re-fit: Smoothly return to center and fit all nodes on screen over 2 seconds
-                // The '100' is the padding in pixels from the edge of the screen
                 Graph.zoomToFit(2000, 100); 
             }, 4000);
         }
@@ -158,92 +145,55 @@
         elem.addEventListener('wheel', resetIdleTimer);
         elem.addEventListener('touchstart', resetIdleTimer);
 
-        // Start the timer on initial load
         resetIdleTimer();
             
-        (function animateGraph() {
-            requestAnimationFrame(animateGraph);
-
-            // Calculate the Camera's "Up" direction in the 3D world ONCE per frame
-            const cam = Graph.camera();
-            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion).normalize();
+        // --- HIGH-PERFORMANCE TELEMETRY RENDER LOOP ---
+        (function animateTelemetry() {
+            requestAnimationFrame(animateTelemetry);
 
             Object.keys(meshRegistry).forEach(uid => {
                 const group = meshRegistry[uid];
-                const core = group.children[0];
-                const pulse = group.children[1];
-                const label = group.children[2];
+                
+                // Safety check: ensure the group has the pulse mesh
+                if (group && group.children.length > 1) {
+                    const pulse = group.children[1];
 
-                // --- Core pulsing logic ---
-                core.userData.phase += core.userData.speed;
-                const mixRatio = (Math.sin(core.userData.phase) + 1) / 2; 
-                core.material.color.lerpColors(baseColor, flashColor, mixRatio);
+                    if (pulse.userData.isPinging) {
+                        pulse.userData.progress += pulse.userData.speed;
+                        const currentScale = 1 + (pulse.userData.progress * 1.5);
+                        pulse.scale.set(currentScale, currentScale, currentScale);
+                        pulse.material.opacity = Math.max(0, 0.6 * (1 - pulse.userData.progress)); 
 
-                // --- Radar ping logic ---
-                if (pulse.userData.isPinging) {
-                    pulse.userData.progress += pulse.userData.speed;
-                    const currentScale = 1 + (pulse.userData.progress * 1.5);
-                    pulse.scale.set(currentScale, currentScale, currentScale);
-                    pulse.material.opacity = Math.max(0, 0.6 * (1 - pulse.userData.progress)); 
-
-                    if (pulse.userData.progress >= 1.0) {
-                        pulse.userData.isPinging = false;
-                        pulse.userData.progress = 0;
-                        pulse.material.opacity = 0;
-                        pulse.scale.set(1, 1, 1);
-                    }
-                }
-
-                // --- Text Proximity & Dynamic Positioning ---
-                if (label) {
-                    // Dynamically reposition the text to always be "screen-up" from the node
-                    const size = core.geometry.parameters.radius; // Read the dynamic size of the node
-                    label.position.copy(cameraUp).multiplyScalar(size + 4); 
-
-                    if (hoverNode) {
-                        const hoverGroup = meshRegistry[hoverNode.id];
-                        if (hoverGroup) {
-                            const dist = group.position.distanceTo(hoverGroup.position);
-                            if (dist < 80) { 
-                                const alpha = Math.max(0, 1 - (dist / 80));
-                                label.color = `rgba(0, 255, 255, ${alpha})`;
-                            } else {
-                                label.color = 'rgba(0, 255, 255, 0)';
-                            }
+                        if (pulse.userData.progress >= 1.0) {
+                            pulse.userData.isPinging = false;
+                            pulse.userData.progress = 0;
+                            pulse.material.opacity = 0;
+                            pulse.scale.set(1, 1, 1);
                         }
-                    } else {
-                        label.color = 'rgba(0, 255, 255, 0)';
                     }
                 }
             });
-        
-            // --- CINEMATIC ORBIT ---
-            // Only engage the orbit AFTER the 2000ms zoomToFit transition has finished otherwise they fight!
+            
+            // Cinematic Orbit
             if (isIdle && Date.now() - idleStartTime > 2000) {
-                
-                // Calculate current radius and angle in the XZ plane
+                const cam = Graph.camera();
                 const distance = Math.hypot(cam.position.x, cam.position.z);
                 const currentAngle = Math.atan2(cam.position.z, cam.position.x);
-                
-                // Advance the angle slightly (0.0005 is a very slow, elegant drift)
                 const newAngle = currentAngle + 0.0005;
                 
-                // Overwrite the camera position. Passing no transition time snaps it instantly for the frame,
-                // allowing for butter-smooth continuous rotation without fighting the controls.
                 Graph.cameraPosition({
                     x: distance * Math.cos(newAngle),
                     z: distance * Math.sin(newAngle),
-                    y: cam.position.y // Lock the vertical height established by zoomToFit
+                    y: cam.position.y 
                 });
             }
-        
         })();
 
         function triggerSequentialPulse(uids) {
             uids.forEach((uid, index) => {
                 setTimeout(() => {
                     const group = meshRegistry[uid];
-                    if (group) {
+                    if (group && group.children.length > 1) {
                         const pulse = group.children[1];
                         pulse.userData.progress = 0;
                         pulse.userData.isPinging = true;
@@ -284,7 +234,6 @@
                 if (newHash !== currentGraphHash) {
                     currentGraphHash = newHash;
                     
-                    // Map how many connections each node has before passing data to the graph
                     const nodeDegree = {};
                     data.links.forEach(link => {
                         const source = typeof link.source === 'object' ? link.source.id : link.source;
@@ -293,10 +242,8 @@
                         nodeDegree[target] = (nodeDegree[target] || 0) + 1;
                     });
 
-                    // Inject the calculated size into the node data
                     data.nodes.forEach(node => {
                         const links = nodeDegree[node.id] || 0;
-                        // Min size 3, max size 12. Scales up by 1.2 per connection.
                         node.val = Math.max(3, Math.min(links * 1.2, 12)); 
                     });
 
@@ -319,10 +266,9 @@
                 statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
                 
                 if (data.memory && data.memory.length > 0) {
-                    // Filter out chat. Only keep System observations or AI Tool Calls.
+                    // Safe filter: Only System observations or AI Tool Calls
                     const agenticMemory = data.memory.filter(m => m.role === 'system' || (m.role === 'model' && m.tool_calls));
                     
-                    // Extract only the last 6 operational events
                     const recentMemory = agenticMemory.slice(-6);
                     
                     const log = recentMemory.map(m => {
@@ -330,15 +276,11 @@
                         let content = "Executing operational logic...";
                         
                         if (m.tool_calls && m.tool_calls.length > 0) {
-                            // It's an AI tool command
                             role = "CORE";
                             content = `INITIATE: ${m.tool_calls[0].tool_name}`;
                         } else if (m.content) {
-                            // It's a system database return or error
                             role = "SYS";
-                            // Truncate heavy GraphRAG payloads for the UI
                             content = m.content.length > 80 ? m.content.substring(0, 77) + "..." : m.content;
-                            // Strip newlines so it flows cleanly in the small box
                             content = content.replace(/\n/g, ' | '); 
                         }
                         
