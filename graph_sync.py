@@ -157,22 +157,26 @@ def sync_hardware_graph():
         for child in entity_group:
             c_domain, c_name = child.split(".", 1)
             
-            # Subtract the true base name to find the specific component dynamically
             if c_name.startswith(base_name) and c_name != base_name:
                 suffix = c_name.replace(base_name, "").strip("_")
             else:
-                # Fallback if strings diverge wildly despite sharing a HA device ID
                 suffix = c_name.replace(primary_name, "").strip("_") if c_name.startswith(primary_name) else ""
             
             key_prefix = suffix if suffix else c_domain
             pointers[f"{key_prefix}_id"] = child
 
+        # --- THE GROUP DETECTOR ---
+        attributes = physical_entities[primary_entity].get("attributes", {})
+        # Virtual groups leave a fingerprint: an array of children they control
+        is_group = isinstance(attributes.get("entity_id"), list) or isinstance(attributes.get("group_members"), list)
+
+        # ---> THE UPSERT BLOCK <---
         db.upsert_lore(
             uid=uid,
-            node_type="hardware" if primary_domain not in ["script", "automation", "scene"] else "routine",
+            node_type="concept" if is_group else ("hardware" if primary_domain not in ["script", "automation", "scene"] else "routine"),
             display_name=friendly_name,
             new_pointers=pointers,
-            new_traits={"sync_status": "auto_sorted", "domain": primary_domain}
+            new_traits={"sync_status": "auto_sorted", "domain": primary_domain, "is_group": is_group}
         )
 
         # --- THE DOMAIN ROUTER ---
@@ -182,7 +186,10 @@ def sync_hardware_graph():
                 target_area_uid = entity_to_area.get(e)
                 break
         
-        if target_area_uid:
+        if is_group:
+            db.upsert_lore("sys_helpers", "concept", "System Helpers")
+            db.create_relationship(uid, "sys_helpers", "is_helper_for")
+        elif target_area_uid:
             db.create_relationship(uid, target_area_uid, "located_in")
         elif primary_domain in ["script", "scene", "automation"]:
             db.upsert_lore("sys_logic", "concept", "System Logic")
@@ -203,8 +210,6 @@ def sync_hardware_graph():
             db.create_relationship(uid, "unassigned_inbox", "requires_triage")
             
         new_nodes_count += 1
-
-    logger.info(f"[*] Sync Complete: Collapsed registry into {new_nodes_count} distinct nodes.")
 
 if __name__ == "__main__":
     sync_hardware_graph()
