@@ -248,10 +248,14 @@ class DatabaseManager:
             return "Wipe aborted. Confirmation boolean missing."
 
         cursor = self.conn.cursor()
-        # Clear SQLite
-        cursor.execute("DELETE FROM nodes")
-        cursor.execute("DELETE FROM properties")
+        
+        # Purge legacy schema if it exists to permanently resolve the mismatch
+        cursor.execute("DROP TABLE IF EXISTS properties")
+        # Clear child tables first to respect strict foreign key constraints
         cursor.execute("DELETE FROM edges")
+        # Clear parent table
+        cursor.execute("DELETE FROM nodes")
+        
         self.conn.commit()
 
         # Clear ChromaDB Collection

@@ -215,7 +215,7 @@
 
         resetIdleTimer();
             
-// --- HIGH-PERFORMANCE TELEMETRY RENDER LOOP ---
+        // --- HIGH-PERFORMANCE TELEMETRY RENDER LOOP ---
         (function animateTelemetry() {
             requestAnimationFrame(animateTelemetry);
 
@@ -278,7 +278,7 @@
             if (isIdle && Date.now() - idleStartTime > 2000) {
                 const distance = Math.hypot(cam.position.x, cam.position.z);
                 const currentAngle = Math.atan2(cam.position.z, cam.position.x);
-                const newAngle = currentAngle + 0.001;
+                const newAngle = currentAngle + 0.0008; // Adjust rotation speed here
                 
                 Graph.cameraPosition({
                     x: distance * Math.cos(newAngle),
