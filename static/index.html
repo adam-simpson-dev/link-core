@@ -140,7 +140,7 @@
                 const label = new SpriteText(node.name ? node.name.toUpperCase() : "UNKNOWN");
                 const opacity = node.textOpacity || 0.4; // Fallback to 0.4 if undefined
                 label.color = `rgba(0, 255, 255, ${opacity})`; 
-                label.textHeight = Math.max(2.5, size * 0.4); 
+                label.textHeight = Math.max(4, size * 0.6); 
                 label.position.y = size + 4; 
                 group.add(label);
 

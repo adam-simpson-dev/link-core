@@ -94,6 +94,36 @@ class HassClient:
             logger.error(f"[!] HASS Template connection error: {e}")
             return {}
 
+    def get_device_map(self):
+        """
+        Extracts the hidden physical hardware registry from HASS.
+        Returns: {"device_id_hash": ["sensor.kitchen", "sensor.kitchen_battery"], ...}
+        """
+        template = """
+        {%- set ns = namespace(devices={}) -%}
+        {%- for state in states -%}
+          {%- set d_id = device_id(state.entity_id) -%}
+          {%- if d_id -%}
+            {%- set current = ns.devices.get(d_id, []) -%}
+            {%- set _ = current.append(state.entity_id) -%}
+            {%- set ns.devices = dict(ns.devices, **{d_id: current}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ ns.devices | tojson }}
+        """
+        endpoint = f"{self.url}/api/template"
+        try:
+            response = requests.post(endpoint, headers=self.headers, json={"template": template})
+            if response.status_code == 200:
+                import json
+                return json.loads(response.text)
+            else:
+                logger.error(f"[!] Device template failed: {response.status_code}")
+                return {}
+        except Exception as e:
+            logger.error(f"[!] HASS Device connection error: {e}")
+            return {}
+
     def get_all_states(self):
         """Retrieves the state registry of all entities currently known to Home Assistant."""
         endpoint = f"{self.url}/api/states"

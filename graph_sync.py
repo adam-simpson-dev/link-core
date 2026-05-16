@@ -74,37 +74,80 @@ def sync_hardware_graph():
 
     # Mint the Unassigned Inbox
     db.upsert_lore(
-        uid="concept_unassigned_inbox", 
+        uid="unassigned_inbox", 
         node_type="concept", 
         display_name="Unassigned Hardware Inbox",
         aliases=["inbox", "new hardware", "unassigned devices"]
     )
 
+    # 1. Fetch the physical device map
+    device_map = hass.get_device_map()
+    
+    # 2. Reverse lookup: entity_id -> device_id
+    entity_to_device = {}
+    for dev_id, entities in device_map.items():
+        for e in entities:
+            entity_to_device[e] = dev_id
+
+    # 3. Group unmapped entities by their physical hardware
+    grouped_unmapped = {}
+    for e_id in unmapped_entities:
+        dev_id = entity_to_device.get(e_id, e_id) # Fallback to entity_id if it lacks a device_id (e.g. scripts)
+        if dev_id not in grouped_unmapped:
+            grouped_unmapped[dev_id] = []
+        grouped_unmapped[dev_id].append(e_id)
+
     new_nodes_count = 0
-    for entity_id in unmapped_entities:
-        domain = entity_id.split(".")[0]
-        uid = f"node_{entity_id.replace('.', '_')}"
-        friendly_name = physical_entities[entity_id].get("attributes", {}).get("friendly_name") or entity_id
+    for dev_id, entity_group in grouped_unmapped.items():
+        # Sort by length. The primary entity is almost always the shortest string.
+        # e.g., 'sensor.motion' comes before 'sensor.motion_battery'
+        entity_group.sort(key=len)
+        primary_entity = entity_group[0]
         
-        # Enforce the strict Envelope and populate the Payload
+        domain = primary_entity.split(".")[0]
+        uid = f"node_{primary_entity.replace('.', '_')}"
+        friendly_name = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or primary_entity
+        
+        # Build the collapsed pointer payload
+        pointers = {"hass_id": primary_entity}
+        for child in entity_group[1:]:
+            # Extract the diagnostic suffix to use as the JSON key (e.g., 'battery', 'illuminance')
+            suffix = child.replace(primary_entity, "").strip("_")
+            if not suffix: suffix = child.split(".")[1]
+            pointers[f"{suffix}_id"] = child
+
+        # Mint the collapsed Node
         db.upsert_lore(
             uid=uid,
-            node_type="hardware",
+            node_type="hardware" if domain not in ["script", "automation", "scene"] else "routine",
             display_name=friendly_name,
-            new_pointers={"hass_id": entity_id},
-            new_traits={"sync_status": "unassigned", "domain": domain}
+            new_pointers=pointers,
+            new_traits={"sync_status": "auto_sorted", "domain": domain}
         )
         
-        # Topology Routing: Link to the room if HASS knows it, otherwise dump in the inbox
-        target_area_uid = entity_to_area.get(entity_id)
+        # --- THE DOMAIN ROUTER ---
+        target_area_uid = entity_to_area.get(primary_entity)
+        
         if target_area_uid:
             db.create_relationship(uid, target_area_uid, "located_in")
+        elif domain in ["script", "scene", "automation"]:
+            db.upsert_lore("sys_logic", "concept", "System Logic")
+            db.create_relationship(uid, "sys_logic", "is_logic_for")
+        elif domain in ["input_boolean", "input_number", "input_text", "input_select", "timer"]:
+            db.upsert_lore("sys_helpers", "concept", "System Helpers")
+            db.create_relationship(uid, "sys_helpers", "is_helper_for")
+        elif domain in ["sun", "weather", "zone", "person", "device_tracker"]:
+            db.upsert_lore("sys_environment", "concept", "Environment & Tracking")
+            db.create_relationship(uid, "sys_environment", "tracks")
+        elif domain in ["update", "sensor", "binary_sensor"] and "update" in primary_entity:
+            db.upsert_lore("sys_diagnostics", "concept", "System Diagnostics")
+            db.create_relationship(uid, "sys_diagnostics", "monitors")
         else:
-            db.create_relationship(uid, "concept_unassigned_inbox", "requires_triage")
+            db.create_relationship(uid, "unassigned_inbox", "requires_triage")
             
         new_nodes_count += 1
 
-    logger.info(f"[*] Sync Complete: Minted {new_nodes_count} hardware stubs and mapped spatial topology.")
+    logger.info(f"[*] Sync Complete: Collapsed {len(unmapped_entities)} entities into {new_nodes_count} hardware nodes.")
 
 if __name__ == "__main__":
     sync_hardware_graph()

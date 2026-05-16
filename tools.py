@@ -25,7 +25,7 @@ TOOL_SCHEMAS = [
                         "type": "object",
                         "properties": {
                             "uid": {"type": "string", "description": "Immutable primary key (e.g., loc_kitchen, user_john)"},
-                            "node_type": {"type": "string", "enum": ["hardware", "person", "location", "concept", "routine", "security_hardware"]},
+                            "node_type": {"type": "string", "enum": ["hardware", "security_hardware", "routine", "location", "person", "pet", "concept"]},
                             "display_name": {"type": "string", "description": "Clean GUI string"},
                             "aliases": {"type": "array", "items": {"type": "string"}},
                             "new_traits": {"type": "object", "description": "Squishy memory sandbox"},
