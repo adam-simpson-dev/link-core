@@ -95,7 +95,7 @@
                 const size = node.val || 5; 
 
                 // Static Core
-                const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0066cc, emissive: 0x002255, shininess: 80 });
+                const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x002255, shininess: 80 });
                 const core = new THREE.Mesh(new THREE.SphereGeometry(size), coreMaterial);
                 group.add(core);
 
@@ -105,9 +105,10 @@
                 pulse.userData = { progress: 0, speed: 0.03, isPinging: false };
                 group.add(pulse);
 
-                // STATIC TEXT: High-performance, no dynamic lerping
+                // Text Labels
                 const label = new SpriteText(node.name ? node.name.toUpperCase() : "UNKNOWN");
-                label.color = 'rgba(0, 255, 255, 0.5)'; // Locked at 50% opacity
+                const opacity = node.textOpacity || 0.4; // Fallback to 0.4 if undefined
+                label.color = `rgba(0, 255, 255, ${opacity})`; 
                 label.textHeight = Math.max(2.5, size * 0.4); 
                 label.position.y = size + 4; 
                 group.add(label);
@@ -131,8 +132,8 @@
         // --- PHYSICS OVERRIDES ---
         // Repulsion force - Reduce for Clusters, increase for space
         Graph.d3Force('charge').strength(-15); 
-        // Rubber Band Force - Tighter for better cohesion
-        Graph.d3Force('link').distance(20);
+        // Rubber Band Force - Increase to loosen clusters, decrease to tighten
+        Graph.d3Force('link').distance(40);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         Graph.scene().add(ambientLight);
@@ -194,7 +195,7 @@
                 const cam = Graph.camera();
                 const distance = Math.hypot(cam.position.x, cam.position.z);
                 const currentAngle = Math.atan2(cam.position.z, cam.position.x);
-                const newAngle = currentAngle + 0.0005;
+                const newAngle = currentAngle + 0.001;
                 
                 Graph.cameraPosition({
                     x: distance * Math.cos(newAngle),
@@ -259,7 +260,11 @@
 
                     data.nodes.forEach(node => {
                         const links = nodeDegree[node.id] || 0;
+                        // Physical Size calculation
                         node.val = Math.max(5, Math.min(links * 1.5, 15)); 
+                        
+                        // Opacity Calculation: Starts at 0.4. Each link adds 0.05 opacity, capping at 0.8.
+                        node.textOpacity = Math.max(0.4, Math.min(0.4 + (links * 0.05), 0.8));
                     });
 
                     Graph.graphData(data);
