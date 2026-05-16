@@ -187,13 +187,16 @@ def sync_hardware_graph():
         elif primary_domain in ["script", "scene", "automation"]:
             db.upsert_lore("sys_logic", "concept", "System Logic")
             db.create_relationship(uid, "sys_logic", "is_logic_for")
-        elif primary_domain in ["input_boolean", "input_number", "input_text", "input_select", "timer"]:
+        elif primary_domain in ["input_boolean", "input_number", "input_text", "input_select", "input_button", "timer", "todo"]:
             db.upsert_lore("sys_helpers", "concept", "System Helpers")
             db.create_relationship(uid, "sys_helpers", "is_helper_for")
         elif primary_domain in ["sun", "weather", "zone", "person", "device_tracker"]:
             db.upsert_lore("sys_environment", "concept", "Environment & Tracking")
             db.create_relationship(uid, "sys_environment", "tracks")
-        elif primary_domain in ["update", "sensor", "binary_sensor"] and "update" in primary_entity:
+        elif primary_domain in ["notify", "tts", "stt", "conversation", "event"]:
+            db.upsert_lore("sys_services", "concept", "System Services")
+            db.create_relationship(uid, "sys_services", "provides_service")
+        elif primary_domain in ["update", "sensor", "binary_sensor"]:
             db.upsert_lore("sys_diagnostics", "concept", "System Diagnostics")
             db.create_relationship(uid, "sys_diagnostics", "monitors")
         else:
