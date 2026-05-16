@@ -130,29 +130,43 @@ def sync_hardware_graph():
     # Mint Nodes & Dynamic Payload Packing
     new_nodes_count = 0
     for group_key, entity_group in grouped_unmapped.items():
-        # The Shortest Name Wins logic dictates the node identity
+        # The Shortest Name Wins logic dictates the primary entity
         entity_group.sort(key=len)
         primary_entity = entity_group[0]
         primary_domain, primary_name = primary_entity.split(".", 1)
         
-        uid = f"node_{primary_domain}_{primary_name}"
-        friendly_name = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or primary_name.replace("_", " ").title()
+        # Extract the true hardware root (Prevents "Battery" from hijacking headless multi-sensors)
+        base_name = primary_name
+        for suffix in KNOWN_SUFFIXES:
+            if base_name.endswith(suffix):
+                base_name = base_name[:-len(suffix)]
+                break
+                
+        uid = f"node_{primary_domain}_{base_name}"
         
+        # Clean the UI display name
+        raw_friendly = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or base_name.replace("_", " ").title()
+        friendly_name = raw_friendly
+        for display_suffix in [" Battery", " Power", " Temperature", " Humidity", " Identify", " Firmware", " Linkquality"]:
+            if friendly_name.endswith(display_suffix):
+                friendly_name = friendly_name[:-len(display_suffix)]
+                break
+
         # Dynamically build the JSON pointers
         pointers = {}
         for child in entity_group:
             c_domain, c_name = child.split(".", 1)
             
-            # Subtract the primary base to find the specific component dynamically
-            if c_name.startswith(primary_name) and c_name != primary_name:
-                suffix = c_name.replace(primary_name, "").strip("_")
+            # Subtract the true base name to find the specific component dynamically
+            if c_name.startswith(base_name) and c_name != base_name:
+                suffix = c_name.replace(base_name, "").strip("_")
             else:
-                suffix = ""
+                # Fallback if strings diverge wildly despite sharing a HA device ID
+                suffix = c_name.replace(primary_name, "").strip("_") if c_name.startswith(primary_name) else ""
             
             key_prefix = suffix if suffix else c_domain
             pointers[f"{key_prefix}_id"] = child
 
-        # ---> UPSERT BLOCK <---
         db.upsert_lore(
             uid=uid,
             node_type="hardware" if primary_domain not in ["script", "automation", "scene"] else "routine",
