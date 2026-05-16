@@ -192,25 +192,46 @@
             }, 4000);
         }
 
+        // --- 2D PROXIMITY FLASHLIGHT ---
+        const mousePos = { x: -9999, y: -9999 }; // Default off-screen
+        
+        elem.addEventListener('mousemove', (e) => {
+            const rect = elem.getBoundingClientRect();
+            mousePos.x = e.clientX - rect.left;
+            mousePos.y = e.clientY - rect.top;
+            resetIdleTimer();
+        });
+        
+        elem.addEventListener('mouseleave', () => {
+            // When mouse leaves the canvas, hide all text
+            mousePos.x = -9999;
+            mousePos.y = -9999;
+        });
         // Bind to all standard interaction events on the graph container
-        elem.addEventListener('mousemove', resetIdleTimer);
+        //elem.addEventListener('mousemove', resetIdleTimer);
         elem.addEventListener('mousedown', resetIdleTimer);
         elem.addEventListener('wheel', resetIdleTimer);
         elem.addEventListener('touchstart', resetIdleTimer);
 
         resetIdleTimer();
             
-        // --- HIGH-PERFORMANCE TELEMETRY RENDER LOOP ---
+// --- HIGH-PERFORMANCE TELEMETRY RENDER LOOP ---
         (function animateTelemetry() {
             requestAnimationFrame(animateTelemetry);
+
+            const cam = Graph.camera();
+            // Cache screen dimensions for pixel conversion
+            const halfWidth = elem.clientWidth / 2;
+            const halfHeight = elem.clientHeight / 2;
 
             Object.keys(meshRegistry).forEach(uid => {
                 const group = meshRegistry[uid];
                 
-                // Safety check: ensure the group has the pulse mesh
-                if (group && group.children.length > 1) {
+                if (group && group.children.length > 2) {
                     const pulse = group.children[1];
+                    const label = group.children[2];
 
+                    // --- Radar Ping Logic ---
                     if (pulse.userData.isPinging) {
                         pulse.userData.progress += pulse.userData.speed;
                         const currentScale = 1 + (pulse.userData.progress * 1.5);
@@ -224,12 +245,37 @@
                             pulse.scale.set(1, 1, 1);
                         }
                     }
+
+                    // --- 2D Proximity Text Fading ---
+                    // Clone the node's true 3D position
+                    const nodePos = group.position.clone();
+                    
+                    // Project the 3D point onto the 2D camera plane (returns -1 to +1 NDC)
+                    nodePos.project(cam);
+                    
+                    // Convert NDC coordinates to actual screen pixels
+                    const nodePixelX = (nodePos.x * halfWidth) + halfWidth;
+                    const nodePixelY = -(nodePos.y * halfHeight) + halfHeight;
+
+                    // Calculate Euclidean distance from the mouse pointer
+                    const dx = mousePos.x - nodePixelX;
+                    const dy = mousePos.y - nodePixelY;
+                    const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Apply Opacity based on proximity
+                    const hoverRadius = 120; // Pixels. Adjust this to make the "flashlight" wider or narrower.
+                    
+                    if (pixelDistance < hoverRadius) {
+                        // Math: At 0 pixels (direct hit), opacity is 1.0. At 120 pixels, opacity is 0.0.
+                        label.material.opacity = 1.0 - (pixelDistance / hoverRadius);
+                    } else {
+                        label.material.opacity = 0;
+                    }
                 }
             });
             
-            // Cinematic Orbit
+            // --- Cinematic Orbit ---
             if (isIdle && Date.now() - idleStartTime > 2000) {
-                const cam = Graph.camera();
                 const distance = Math.hypot(cam.position.x, cam.position.z);
                 const currentAngle = Math.atan2(cam.position.z, cam.position.x);
                 const newAngle = currentAngle + 0.001;
