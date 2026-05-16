@@ -138,7 +138,7 @@ def sync_hardware_graph():
         uid = f"node_{primary_domain}_{primary_name}"
         friendly_name = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or primary_name.replace("_", " ").title()
         
-        # Dynamically build the JSON pointers without relying on the hardcoded list
+        # Dynamically build the JSON pointers
         pointers = {}
         for child in entity_group:
             c_domain, c_name = child.split(".", 1)
@@ -151,9 +151,17 @@ def sync_hardware_graph():
             
             key_prefix = suffix if suffix else c_domain
             pointers[f"{key_prefix}_id"] = child
-        
+
+        # ---> UPSERT BLOCK <---
+        db.upsert_lore(
+            uid=uid,
+            node_type="hardware" if primary_domain not in ["script", "automation", "scene"] else "routine",
+            display_name=friendly_name,
+            new_pointers=pointers,
+            new_traits={"sync_status": "auto_sorted", "domain": primary_domain}
+        )
+
         # --- THE DOMAIN ROUTER ---
-        # Scan the entire group for any assigned area
         target_area_uid = None
         for e in entity_group:
             if entity_to_area.get(e):
