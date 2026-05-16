@@ -132,11 +132,17 @@
         // --- PHYSICS OVERRIDES ---
         // Repulsion force - Reduce for Clusters, increase for space
         Graph.d3Force('charge').strength(-15); 
-        // Rubber Band Force - Increase to loosen clusters, decrease to tighten
-        Graph.d3Force('link').distance(40);
+        // Rubber Band Force - Increase to loosen clusters, default is 30
+        Graph.d3Force('link').distance(60);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         Graph.scene().add(ambientLight);
+
+        // --- RESPONSIVE CANVAS ---
+        window.addEventListener('resize', () => {
+            Graph.width(window.innerWidth);
+            Graph.height(window.innerHeight);
+        });
 
         // --- CINEMATIC IDLE STATE ---
         let isIdle = false;
