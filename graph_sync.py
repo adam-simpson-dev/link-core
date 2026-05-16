@@ -165,10 +165,25 @@ def sync_hardware_graph():
             key_prefix = suffix if suffix else c_domain
             pointers[f"{key_prefix}_id"] = child
 
-        # --- THE GROUP DETECTOR ---
+       # --- THE TWO-FACTOR GROUP DETECTOR ---
         attributes = physical_entities[primary_entity].get("attributes", {})
-        # Virtual groups leave a fingerprint: an array of children they control
-        is_group = isinstance(attributes.get("entity_id"), list) or isinstance(attributes.get("group_members"), list)
+        
+        # Factor 1: The Native HASS Fingerprint (For obedient integrations)
+        has_group_attr = (
+            isinstance(attributes.get("entity_id"), list) or 
+            isinstance(attributes.get("group_members"), list) or
+            attributes.get("is_hue_group") is True
+        )
+        
+        # Factor 2: The Orphaned Lexical Net (For non-compliant integrations like Cast/Hue)
+        is_orphan = primary_entity in orphaned_entities
+        is_lexical_group = False
+        if is_orphan:
+            # We already stripped the domain, so we just check the base name
+            if primary_name.startswith("all_") or primary_name.endswith(("_group", "_groups", "_speakers", "_lights")):
+                is_lexical_group = True
+
+        is_group = has_group_attr or is_lexical_group
 
         # ---> THE UPSERT BLOCK <---
         db.upsert_lore(
@@ -210,6 +225,8 @@ def sync_hardware_graph():
             db.create_relationship(uid, "unassigned_inbox", "requires_triage")
             
         new_nodes_count += 1
+
+    logger.info(f"[*] Sync Complete: Collapsed registry into {new_nodes_count} distinct nodes.")
 
 if __name__ == "__main__":
     sync_hardware_graph()
