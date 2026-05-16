@@ -26,6 +26,18 @@
         .prop-key { color: #88ffff; }
         .prop-val { color: #ffffff; text-align: right;}
 
+        /* UI Collapsible Mechanics */
+        .box-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .box h2 { margin: 0; } /* Overriding previous h2 margin */
+        .box.collapsed .box-header { margin-bottom: 0; }
+        
+        .toggle-arrow { color: #00ffff; cursor: pointer; font-size: 12px; transition: transform 0.3s ease; user-select: none; }
+        /* A 90-degree clockwise rotation turns a downward ▼ into a leftward ◀ */
+        .box.collapsed .toggle-arrow { transform: rotate(90deg); }
+        
+        .collapsible-content { max-height: 400px; overflow: hidden; transition: max-height 0.3s ease, opacity 0.3s ease; opacity: 1; }
+        .box.collapsed .collapsible-content { max-height: 0; opacity: 0; }
+
         /* Terminal Specific Styling */
         #chat-log { max-height: 180px; overflow-y: auto; margin-bottom: 10px; font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; scrollbar-color: #00ffff rgba(0,0,0,0.5); }
         .msg-user { color: #ffffff; text-align: left; opacity: 0.8; }
@@ -44,9 +56,14 @@
             <h2>System State</h2>
             <div id="system-status" style="font-weight: bold;">NOMINAL</div>
         </div>
-        <div class="box">
-            <h2>Active Memory</h2>
-            <div id="memory-log" style="font-size: 11px; height: 240px; overflow: hidden; line-height: 1.4; display: flex; flex-direction: column; justify-content: flex-end;"></div>
+        <div class="box" id="memory-box">
+            <div class="box-header">
+                <h2>Active Memory</h2>
+                <div class="toggle-arrow" id="toggle-memory">▼</div>
+            </div>
+            <div class="collapsible-content">
+                <div id="memory-log" style="font-size: 11px; height: 240px; overflow: hidden; line-height: 1.4; display: flex; flex-direction: column; justify-content: flex-end;"></div>
+            </div>
         </div>
     </div>
 
@@ -59,14 +76,19 @@
     </div>
 
     <div class="ui-panel" id="terminal-panel">
-        <div class="box">
-            <h2>Uplink Terminal</h2>
-            <div id="chat-log">
-                <div class="msg-sys">AWAITING INPUT...</div>
+        <div class="box" id="terminal-box">
+            <div class="box-header">
+                <h2>Uplink Terminal</h2>
+                <div class="toggle-arrow" id="toggle-terminal">▼</div>
             </div>
-            <div id="chat-input-wrapper">
-                <span>></span>
-                <input type="text" id="chat-input" placeholder="Execute command or query LORE..." autocomplete="off">
+            <div class="collapsible-content">
+                <div id="chat-log">
+                    <div class="msg-sys">AWAITING INPUT...</div>
+                </div>
+                <div id="chat-input-wrapper">
+                    <span>></span>
+                    <input type="text" id="chat-input" placeholder="Execute command or query LORE..." autocomplete="off">
+                </div>
             </div>
         </div>
     </div>
@@ -76,6 +98,16 @@
     <script type="module">
         import * as THREE from 'https://esm.sh/three';
         import ForceGraph3D from 'https://esm.sh/3d-force-graph';
+        import SpriteText from 'https://esm.sh/three-spritetext';
+
+        // --- UI TOGGLE LOGIC ---
+        document.getElementById('toggle-memory').addEventListener('click', () => {
+            document.getElementById('memory-box').classList.toggle('collapsed');
+        });
+        
+        document.getElementById('toggle-terminal').addEventListener('click', () => {
+            document.getElementById('terminal-box').classList.toggle('collapsed');
+        });
 
         // --- OPTIMIZED GRAPH ENGINE ---
         const elem = document.getElementById('3d-graph');
@@ -83,7 +115,6 @@
         let hoverNode = null; 
 
         const Graph = ForceGraph3D()(elem)
-            // NATIVE 2D TEXT RENDERING (Zero 3D overhead)
             .nodeLabel(node => {
                 return `<div style="background: rgba(0, 15, 25, 0.9); border: 1px solid #00ffff; padding: 4px 8px; border-radius: 4px; color: #fff; font-size: 12px; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0,255,255,0.3);">
                             ${node.name ? node.name.toUpperCase() : "UNKNOWN"}
@@ -91,9 +122,10 @@
             })
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
-                const size = node.val || 4;
+                // Base size increased slightly for better visibility
+                const size = node.val || 5; 
 
-                // Static Core (No constant lerping)
+                // Static Core
                 const coreMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x002255, shininess: 80 });
                 const core = new THREE.Mesh(new THREE.SphereGeometry(size), coreMaterial);
                 group.add(core);
@@ -104,6 +136,14 @@
                 pulse.userData = { progress: 0, speed: 0.03, isPinging: false };
                 group.add(pulse);
 
+                // Text Labels
+                const label = new SpriteText(node.name ? node.name.toUpperCase() : "UNKNOWN");
+                const opacity = node.textOpacity || 0.4; // Fallback to 0.4 if undefined
+                label.color = `rgba(0, 255, 255, ${opacity})`; 
+                label.textHeight = Math.max(2.5, size * 0.4); 
+                label.position.y = size + 4; 
+                group.add(label);
+
                 meshRegistry[node.id] = group; 
                 return group;
             })
@@ -111,16 +151,29 @@
                 hoverNode = node || null;
                 elem.style.cursor = node ? 'pointer' : null;
             })
+            // Clicking a node fetches its data and opens the inspector panel
             .onNodeClick(node => fetchNodeData(node.id))
+            // Background click closes the inspector panel
             .onBackgroundClick(() => {
                 document.getElementById('inspector-box').style.display = 'none';
             })
-            // STATIC EDGES (No particles)
             .linkColor(() => 'rgba(0, 255, 255, 0.3)')
             .linkWidth(0.5);
 
+        // --- PHYSICS OVERRIDES ---
+        // Repulsion force - Reduce for Clusters, increase for space
+        Graph.d3Force('charge').strength(-15); 
+        // Rubber Band Force - Increase to loosen clusters, default is 30
+        Graph.d3Force('link').distance(60);
+
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         Graph.scene().add(ambientLight);
+
+        // --- RESPONSIVE CANVAS ---
+        window.addEventListener('resize', () => {
+            Graph.width(window.innerWidth);
+            Graph.height(window.innerHeight);
+        });
 
         // --- CINEMATIC IDLE STATE ---
         let isIdle = false;
@@ -179,7 +232,7 @@
                 const cam = Graph.camera();
                 const distance = Math.hypot(cam.position.x, cam.position.z);
                 const currentAngle = Math.atan2(cam.position.z, cam.position.x);
-                const newAngle = currentAngle + 0.0005;
+                const newAngle = currentAngle + 0.001;
                 
                 Graph.cameraPosition({
                     x: distance * Math.cos(newAngle),
@@ -244,7 +297,11 @@
 
                     data.nodes.forEach(node => {
                         const links = nodeDegree[node.id] || 0;
-                        node.val = Math.max(3, Math.min(links * 1.2, 12)); 
+                        // Physical Size calculation
+                        node.val = Math.max(5, Math.min(links * 1.5, 15)); 
+                        
+                        // Opacity Calculation: Starts at 0.4. Each link adds 0.05 opacity, capping at 0.8.
+                        node.textOpacity = Math.max(0.4, Math.min(0.4 + (links * 0.05), 0.8));
                     });
 
                     Graph.graphData(data);
