@@ -217,12 +217,17 @@ class DatabaseManager:
         )
 
     def create_relationship(self, source_uid, target_uid, relationship):
+        import time
         cursor = self.conn.cursor()
-        # Enforce strict existence. No auto-minting ghost nodes.
-        for uid in [source_uid, target_uid]:
-            cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (uid,))
+        
+        for check_uid in [source_uid, target_uid]:
+            cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
             if not cursor.fetchone():
-                raise ValueError(f"Relational Error: Node '{uid}' does not exist. Upsert it first.")
+                # I/O Buffer Fallback: Give SQLite 50ms to flush the commit before throwing a fatal error
+                time.sleep(0.05)
+                cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
+                if not cursor.fetchone():
+                    raise ValueError(f"Relational Error: Node '{check_uid}' does not exist. Upsert it first.")
         
         cursor.execute("INSERT INTO edges (source_uid, target_uid, relationship) VALUES (?, ?, ?)", 
                        (source_uid, target_uid, relationship))

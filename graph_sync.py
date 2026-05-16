@@ -89,7 +89,7 @@ def sync_hardware_graph():
         for e in entities:
             entity_to_device[e] = dev_id
 
-    # 3. Hybrid Grouping Architecture
+    # Hybrid Grouping Architecture
     grouped_unmapped = {}
     orphaned_entities = []
 
@@ -127,7 +127,7 @@ def sync_hardware_graph():
             grouped_unmapped[group_key] = []
         grouped_unmapped[group_key].append(e_id)
 
-    # 4. Mint Nodes & Dynamic Payload Packing
+    # Mint Nodes & Dynamic Payload Packing
     new_nodes_count = 0
     for group_key, entity_group in grouped_unmapped.items():
         # The Shortest Name Wins logic dictates the node identity

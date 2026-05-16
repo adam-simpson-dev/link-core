@@ -104,9 +104,8 @@ class HassClient:
         {%- for state in states -%}
           {%- set d_id = device_id(state.entity_id) -%}
           {%- if d_id -%}
-            {%- set current = ns.devices.get(d_id, []) -%}
-            {%- set _ = current.append(state.entity_id) -%}
-            {%- set ns.devices = dict(ns.devices, **{d_id: current}) -%}
+            {%- set current = ns.devices.get(d_id, []) + [state.entity_id] -%}
+            {%- set _ = ns.devices.update({d_id: current}) -%}
           {%- endif -%}
         {%- endfor -%}
         {{ ns.devices | tojson }}
