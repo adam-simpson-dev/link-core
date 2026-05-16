@@ -223,11 +223,14 @@ class DatabaseManager:
         for check_uid in [source_uid, target_uid]:
             cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
             if not cursor.fetchone():
-                # I/O Buffer Fallback: Give SQLite 50ms to flush the commit before throwing a fatal error
+                # I/O Buffer Fallback: Give SQLite 50ms to flush the commit
                 time.sleep(0.05)
                 cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
                 if not cursor.fetchone():
-                    raise ValueError(f"Relational Error: Node '{check_uid}' does not exist. Upsert it first.")
+                    # Auto-Heal: Mint a stub instead of violently crashing
+                    logger.warning(f"[!] Ghost Node Detected: '{check_uid}'. Auto-minting stub to preserve topography.")
+                    cursor.execute("INSERT INTO nodes (uid, node_type, display_name) VALUES (?, ?, ?)", (check_uid, "concept", check_uid))
+                    self.conn.commit()
         
         cursor.execute("INSERT INTO edges (source_uid, target_uid, relationship) VALUES (?, ?, ?)", 
                        (source_uid, target_uid, relationship))

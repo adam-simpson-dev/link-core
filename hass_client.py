@@ -97,15 +97,16 @@ class HassClient:
     def get_device_map(self):
         """
         Extracts the hidden physical hardware registry from HASS.
-        Returns: {"device_id_hash": ["sensor.kitchen", "sensor.kitchen_battery"], ...}
+        Returns: {"dev_hash": ["sensor.kitchen", "sensor.kitchen_battery"], ...}
         """
         template = """
         {%- set ns = namespace(devices={}) -%}
         {%- for state in states -%}
           {%- set d_id = device_id(state.entity_id) -%}
           {%- if d_id -%}
-            {%- set current = ns.devices.get(d_id, []) + [state.entity_id] -%}
-            {%- set _ = ns.devices.update({d_id: current}) -%}
+            {%- set safe_id = "dev_" ~ d_id -%}
+            {%- set current = ns.devices.get(safe_id, []) + [state.entity_id] -%}
+            {%- set ns.devices = dict(ns.devices, **{safe_id: current}) -%}
           {%- endif -%}
         {%- endfor -%}
         {{ ns.devices | tojson }}
