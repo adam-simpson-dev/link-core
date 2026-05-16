@@ -26,6 +26,18 @@
         .prop-key { color: #88ffff; }
         .prop-val { color: #ffffff; text-align: right;}
 
+        /* UI Collapsible Mechanics */
+        .box-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .box h2 { margin: 0; } /* Overriding previous h2 margin */
+        .box.collapsed .box-header { margin-bottom: 0; }
+        
+        .toggle-arrow { color: #00ffff; cursor: pointer; font-size: 12px; transition: transform 0.3s ease; user-select: none; }
+        /* A 90-degree clockwise rotation turns a downward ▼ into a leftward ◀ */
+        .box.collapsed .toggle-arrow { transform: rotate(90deg); }
+        
+        .collapsible-content { max-height: 400px; overflow: hidden; transition: max-height 0.3s ease, opacity 0.3s ease; opacity: 1; }
+        .box.collapsed .collapsible-content { max-height: 0; opacity: 0; }
+
         /* Terminal Specific Styling */
         #chat-log { max-height: 180px; overflow-y: auto; margin-bottom: 10px; font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; scrollbar-color: #00ffff rgba(0,0,0,0.5); }
         .msg-user { color: #ffffff; text-align: left; opacity: 0.8; }
@@ -44,9 +56,14 @@
             <h2>System State</h2>
             <div id="system-status" style="font-weight: bold;">NOMINAL</div>
         </div>
-        <div class="box">
-            <h2>Active Memory</h2>
-            <div id="memory-log" style="font-size: 11px; height: 240px; overflow: hidden; line-height: 1.4; display: flex; flex-direction: column; justify-content: flex-end;"></div>
+        <div class="box" id="memory-box">
+            <div class="box-header">
+                <h2>Active Memory</h2>
+                <div class="toggle-arrow" id="toggle-memory">▼</div>
+            </div>
+            <div class="collapsible-content">
+                <div id="memory-log" style="font-size: 11px; height: 240px; overflow: hidden; line-height: 1.4; display: flex; flex-direction: column; justify-content: flex-end;"></div>
+            </div>
         </div>
     </div>
 
@@ -59,14 +76,19 @@
     </div>
 
     <div class="ui-panel" id="terminal-panel">
-        <div class="box">
-            <h2>Uplink Terminal</h2>
-            <div id="chat-log">
-                <div class="msg-sys">AWAITING INPUT...</div>
+        <div class="box" id="terminal-box">
+            <div class="box-header">
+                <h2>Uplink Terminal</h2>
+                <div class="toggle-arrow" id="toggle-terminal">▼</div>
             </div>
-            <div id="chat-input-wrapper">
-                <span>></span>
-                <input type="text" id="chat-input" placeholder="Execute command or query LORE..." autocomplete="off">
+            <div class="collapsible-content">
+                <div id="chat-log">
+                    <div class="msg-sys">AWAITING INPUT...</div>
+                </div>
+                <div id="chat-input-wrapper">
+                    <span>></span>
+                    <input type="text" id="chat-input" placeholder="Execute command or query LORE..." autocomplete="off">
+                </div>
             </div>
         </div>
     </div>
@@ -77,6 +99,15 @@
         import * as THREE from 'https://esm.sh/three';
         import ForceGraph3D from 'https://esm.sh/3d-force-graph';
         import SpriteText from 'https://esm.sh/three-spritetext';
+
+        // --- UI TOGGLE LOGIC ---
+        document.getElementById('toggle-memory').addEventListener('click', () => {
+            document.getElementById('memory-box').classList.toggle('collapsed');
+        });
+        
+        document.getElementById('toggle-terminal').addEventListener('click', () => {
+            document.getElementById('terminal-box').classList.toggle('collapsed');
+        });
 
         // --- OPTIMIZED GRAPH ENGINE ---
         const elem = document.getElementById('3d-graph');
