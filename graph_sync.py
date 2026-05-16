@@ -89,90 +89,89 @@ def sync_hardware_graph():
         for e in entities:
             entity_to_device[e] = dev_id
 
-    # Group unmapped entities by their physical hardware (HA Registry)
+    # 3. Hybrid Grouping Architecture
     grouped_unmapped = {}
+    orphaned_entities = []
+
+    # Pass A: The Physical Registry (Fully Dynamic, No Hardcoding)
     for e_id in unmapped_entities:
-        dev_id = entity_to_device.get(e_id, e_id) 
-        if dev_id not in grouped_unmapped:
-            grouped_unmapped[dev_id] = []
-        grouped_unmapped[dev_id].append(e_id)
+        dev_id = entity_to_device.get(e_id)
+        if dev_id:
+            if dev_id not in grouped_unmapped:
+                grouped_unmapped[dev_id] = []
+            grouped_unmapped[dev_id].append(e_id)
+        else:
+            orphaned_entities.append(e_id)
 
-    # Lexical Fallback Collapse (The Registry Catcher)
-    # Catches child entities that the HA registry failed to link natively.
-    diagnostic_domains = ["sensor", "binary_sensor", "update"]
-    diagnostic_suffixes = ["_battery", "_power", "_linkquality", "_firmware", "_energy", "_voltage", "_current", "_temperature", "_humidity", "_action", "_illuminance"]
-    
-    standalone_dev_ids = [k for k, v in grouped_unmapped.items() if len(v) == 1]
-    
-    for dev_id in standalone_dev_ids:
-        child_eid = grouped_unmapped[dev_id][0]
-        domain, child_name = child_eid.split(".", 1)
+    # Pass B: The Lexical Safety Net (Strict Whitelist for Orphans)
+    KNOWN_SUFFIXES = [
+        "_battery", "_power", "_linkquality", "_firmware", "_energy",
+        "_voltage", "_current", "_temperature", "_humidity", "_action",
+        "_illuminance", "_identify", "_state", "_status", "_occupancy",
+        "_contact", "_tamper", "_on_off_transition_time", "_power_on_behavior",
+        "_startup_behavior", "_device_temperature"
+    ]
+
+    for e_id in orphaned_entities:
+        domain, name = e_id.split(".", 1)
+        base_name = name
         
-        if domain in diagnostic_domains:
-            parent_name_guess = child_name
-            for suffix in diagnostic_suffixes:
-                parent_name_guess = parent_name_guess.replace(suffix, "")
+        # Only strip if it matches a known, safe diagnostic suffix
+        for suffix in KNOWN_SUFFIXES:
+            if base_name.endswith(suffix):
+                base_name = base_name[:-len(suffix)]
+                break 
                 
-            if parent_name_guess != child_name:
-                found_parent = False
-                # Cast to list to safely mutate the dictionary during iteration
-                for p_dev_id, p_group in list(grouped_unmapped.items()):
-                    if p_dev_id == dev_id: continue 
-                    for p_eid in p_group:
-                        if p_eid.endswith(f".{parent_name_guess}"):
-                            grouped_unmapped[p_dev_id].append(child_eid)
-                            del grouped_unmapped[dev_id]
-                            found_parent = True
-                            break
-                    if found_parent: break
+        group_key = f"lex_{base_name}"
+        if group_key not in grouped_unmapped:
+            grouped_unmapped[group_key] = []
+        grouped_unmapped[group_key].append(e_id)
 
-    # Mint Nodes & Payload Packing
+    # 4. Mint Nodes & Dynamic Payload Packing
     new_nodes_count = 0
-    for dev_id, entity_group in grouped_unmapped.items():
+    for group_key, entity_group in grouped_unmapped.items():
+        # The Shortest Name Wins logic dictates the node identity
         entity_group.sort(key=len)
         primary_entity = entity_group[0]
+        primary_domain, primary_name = primary_entity.split(".", 1)
         
-        domain = primary_entity.split(".")[0]
-        uid = f"node_{primary_entity.replace('.', '_')}"
-        friendly_name = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or primary_entity
+        uid = f"node_{primary_domain}_{primary_name}"
+        friendly_name = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or primary_name.replace("_", " ").title()
         
-        pointers = {"hass_id": primary_entity}
-        for child in entity_group[1:]:
+        # Dynamically build the JSON pointers without relying on the hardcoded list
+        pointers = {}
+        for child in entity_group:
             c_domain, c_name = child.split(".", 1)
-            p_name = primary_entity.split(".", 1)[1]
             
-            # Set-difference array parsing to extract the isolated JSON key 
-            # e.g., 'sensor_kitchen_battery_2' - 'sensor_kitchen_2' = 'battery'
-            c_parts = set(c_name.split("_"))
-            p_parts = set(p_name.split("_"))
-            diff = c_parts - p_parts
+            # Subtract the primary base to find the specific component dynamically
+            if c_name.startswith(primary_name) and c_name != primary_name:
+                suffix = c_name.replace(primary_name, "").strip("_")
+            else:
+                suffix = ""
             
-            suffix = "_".join(diff) if diff else c_domain
-            pointers[f"{suffix}_id"] = child
-
-        db.upsert_lore(
-            uid=uid,
-            node_type="hardware" if domain not in ["script", "automation", "scene"] else "routine",
-            display_name=friendly_name,
-            new_pointers=pointers,
-            new_traits={"sync_status": "auto_sorted", "domain": domain}
-        )
+            key_prefix = suffix if suffix else c_domain
+            pointers[f"{key_prefix}_id"] = child
         
         # --- THE DOMAIN ROUTER ---
-        target_area_uid = entity_to_area.get(primary_entity)
+        # Scan the entire group for any assigned area
+        target_area_uid = None
+        for e in entity_group:
+            if entity_to_area.get(e):
+                target_area_uid = entity_to_area.get(e)
+                break
         
         if target_area_uid:
             db.create_relationship(uid, target_area_uid, "located_in")
-        elif domain in ["script", "scene", "automation"]:
+        elif primary_domain in ["script", "scene", "automation"]:
             db.upsert_lore("sys_logic", "concept", "System Logic")
             db.create_relationship(uid, "sys_logic", "is_logic_for")
-        elif domain in ["input_boolean", "input_number", "input_text", "input_select", "timer"]:
+        elif primary_domain in ["input_boolean", "input_number", "input_text", "input_select", "timer"]:
             db.upsert_lore("sys_helpers", "concept", "System Helpers")
             db.create_relationship(uid, "sys_helpers", "is_helper_for")
-        elif domain in ["sun", "weather", "zone", "person", "device_tracker"]:
+        elif primary_domain in ["sun", "weather", "zone", "person", "device_tracker"]:
             db.upsert_lore("sys_environment", "concept", "Environment & Tracking")
             db.create_relationship(uid, "sys_environment", "tracks")
-        elif domain in ["update", "sensor", "binary_sensor"] and "update" in primary_entity:
+        elif primary_domain in ["update", "sensor", "binary_sensor"] and "update" in primary_entity:
             db.upsert_lore("sys_diagnostics", "concept", "System Diagnostics")
             db.create_relationship(uid, "sys_diagnostics", "monitors")
         else:
@@ -180,7 +179,7 @@ def sync_hardware_graph():
             
         new_nodes_count += 1
 
-    logger.info(f"[*] Sync Complete: Collapsed fragmented registry into {new_nodes_count} distinct nodes.")
+    logger.info(f"[*] Sync Complete: Collapsed registry into {new_nodes_count} distinct nodes.")
 
 if __name__ == "__main__":
     sync_hardware_graph()
