@@ -80,27 +80,55 @@ def sync_hardware_graph():
         aliases=["inbox", "new hardware", "unassigned devices"]
     )
 
-    # 1. Fetch the physical device map
+    # Fetch the physical device map
     device_map = hass.get_device_map()
     
-    # 2. Reverse lookup: entity_id -> device_id
+    # Reverse lookup: entity_id -> device_id
     entity_to_device = {}
     for dev_id, entities in device_map.items():
         for e in entities:
             entity_to_device[e] = dev_id
 
-    # 3. Group unmapped entities by their physical hardware
+    # Group unmapped entities by their physical hardware (HA Registry)
     grouped_unmapped = {}
     for e_id in unmapped_entities:
-        dev_id = entity_to_device.get(e_id, e_id) # Fallback to entity_id if it lacks a device_id (e.g. scripts)
+        dev_id = entity_to_device.get(e_id, e_id) 
         if dev_id not in grouped_unmapped:
             grouped_unmapped[dev_id] = []
         grouped_unmapped[dev_id].append(e_id)
 
+    # Lexical Fallback Collapse (The Registry Catcher)
+    # Catches child entities that the HA registry failed to link natively.
+    diagnostic_domains = ["sensor", "binary_sensor", "update"]
+    diagnostic_suffixes = ["_battery", "_power", "_linkquality", "_firmware", "_energy", "_voltage", "_current", "_temperature", "_humidity", "_action", "_illuminance"]
+    
+    standalone_dev_ids = [k for k, v in grouped_unmapped.items() if len(v) == 1]
+    
+    for dev_id in standalone_dev_ids:
+        child_eid = grouped_unmapped[dev_id][0]
+        domain, child_name = child_eid.split(".", 1)
+        
+        if domain in diagnostic_domains:
+            parent_name_guess = child_name
+            for suffix in diagnostic_suffixes:
+                parent_name_guess = parent_name_guess.replace(suffix, "")
+                
+            if parent_name_guess != child_name:
+                found_parent = False
+                # Cast to list to safely mutate the dictionary during iteration
+                for p_dev_id, p_group in list(grouped_unmapped.items()):
+                    if p_dev_id == dev_id: continue 
+                    for p_eid in p_group:
+                        if p_eid.endswith(f".{parent_name_guess}"):
+                            grouped_unmapped[p_dev_id].append(child_eid)
+                            del grouped_unmapped[dev_id]
+                            found_parent = True
+                            break
+                    if found_parent: break
+
+    # Mint Nodes & Payload Packing
     new_nodes_count = 0
     for dev_id, entity_group in grouped_unmapped.items():
-        # Sort by length. The primary entity is almost always the shortest string.
-        # e.g., 'sensor.motion' comes before 'sensor.motion_battery'
         entity_group.sort(key=len)
         primary_entity = entity_group[0]
         
@@ -108,15 +136,20 @@ def sync_hardware_graph():
         uid = f"node_{primary_entity.replace('.', '_')}"
         friendly_name = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or primary_entity
         
-        # Build the collapsed pointer payload
         pointers = {"hass_id": primary_entity}
         for child in entity_group[1:]:
-            # Extract the diagnostic suffix to use as the JSON key (e.g., 'battery', 'illuminance')
-            suffix = child.replace(primary_entity, "").strip("_")
-            if not suffix: suffix = child.split(".")[1]
+            c_domain, c_name = child.split(".", 1)
+            p_name = primary_entity.split(".", 1)[1]
+            
+            # Set-difference array parsing to extract the isolated JSON key 
+            # e.g., 'sensor_kitchen_battery_2' - 'sensor_kitchen_2' = 'battery'
+            c_parts = set(c_name.split("_"))
+            p_parts = set(p_name.split("_"))
+            diff = c_parts - p_parts
+            
+            suffix = "_".join(diff) if diff else c_domain
             pointers[f"{suffix}_id"] = child
 
-        # Mint the collapsed Node
         db.upsert_lore(
             uid=uid,
             node_type="hardware" if domain not in ["script", "automation", "scene"] else "routine",
@@ -147,7 +180,7 @@ def sync_hardware_graph():
             
         new_nodes_count += 1
 
-    logger.info(f"[*] Sync Complete: Collapsed {len(unmapped_entities)} entities into {new_nodes_count} hardware nodes.")
+    logger.info(f"[*] Sync Complete: Collapsed fragmented registry into {new_nodes_count} distinct nodes.")
 
 if __name__ == "__main__":
     sync_hardware_graph()

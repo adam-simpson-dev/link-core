@@ -115,11 +115,6 @@
         let hoverNode = null; 
 
         const Graph = ForceGraph3D()(elem)
-            .nodeLabel(node => {
-                return `<div style="background: rgba(0, 15, 25, 0.9); border: 1px solid #00ffff; padding: 4px 8px; border-radius: 4px; color: #fff; font-size: 12px; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0,255,255,0.3);">
-                            ${node.name ? node.name.toUpperCase() : "UNKNOWN"}
-                        </div>`;
-            })
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
                 // Base size increased slightly for better visibility
