@@ -74,37 +74,159 @@ def sync_hardware_graph():
 
     # Mint the Unassigned Inbox
     db.upsert_lore(
-        uid="concept_unassigned_inbox", 
+        uid="unassigned_inbox", 
         node_type="concept", 
         display_name="Unassigned Hardware Inbox",
         aliases=["inbox", "new hardware", "unassigned devices"]
     )
 
-    new_nodes_count = 0
-    for entity_id in unmapped_entities:
-        domain = entity_id.split(".")[0]
-        uid = f"node_{entity_id.replace('.', '_')}"
-        friendly_name = physical_entities[entity_id].get("attributes", {}).get("friendly_name") or entity_id
+    # Fetch the physical device map
+    device_map = hass.get_device_map()
+    
+    # Reverse lookup: entity_id -> device_id
+    entity_to_device = {}
+    for dev_id, entities in device_map.items():
+        for e in entities:
+            entity_to_device[e] = dev_id
+
+    # Hybrid Grouping Architecture
+    grouped_unmapped = {}
+    orphaned_entities = []
+
+    # Pass A: The Physical Registry (Fully Dynamic, No Hardcoding)
+    for e_id in unmapped_entities:
+        dev_id = entity_to_device.get(e_id)
+        if dev_id:
+            if dev_id not in grouped_unmapped:
+                grouped_unmapped[dev_id] = []
+            grouped_unmapped[dev_id].append(e_id)
+        else:
+            orphaned_entities.append(e_id)
+
+    # Pass B: The Lexical Safety Net (Strict Whitelist for Orphans)
+    KNOWN_SUFFIXES = [
+        "_battery", "_power", "_linkquality", "_firmware", "_energy",
+        "_voltage", "_current", "_temperature", "_humidity", "_action",
+        "_illuminance", "_identify", "_state", "_status", "_occupancy",
+        "_contact", "_tamper", "_on_off_transition_time", "_power_on_behavior",
+        "_startup_behavior", "_device_temperature"
+    ]
+
+    for e_id in orphaned_entities:
+        domain, name = e_id.split(".", 1)
+        base_name = name
         
-        # Enforce the strict Envelope and populate the Payload
-        db.upsert_lore(
-            uid=uid,
-            node_type="hardware",
-            display_name=friendly_name,
-            new_pointers={"hass_id": entity_id},
-            new_traits={"sync_status": "unassigned", "domain": domain}
+        # Only strip if it matches a known, safe diagnostic suffix
+        for suffix in KNOWN_SUFFIXES:
+            if base_name.endswith(suffix):
+                base_name = base_name[:-len(suffix)]
+                break 
+                
+        group_key = f"lex_{base_name}"
+        if group_key not in grouped_unmapped:
+            grouped_unmapped[group_key] = []
+        grouped_unmapped[group_key].append(e_id)
+
+    # Mint Nodes & Dynamic Payload Packing
+    new_nodes_count = 0
+    for group_key, entity_group in grouped_unmapped.items():
+        # The Shortest Name Wins logic dictates the primary entity
+        entity_group.sort(key=len)
+        primary_entity = entity_group[0]
+        primary_domain, primary_name = primary_entity.split(".", 1)
+        
+        # Extract the true hardware root (Prevents "Battery" from hijacking headless multi-sensors)
+        base_name = primary_name
+        for suffix in KNOWN_SUFFIXES:
+            if base_name.endswith(suffix):
+                base_name = base_name[:-len(suffix)]
+                break
+                
+        uid = f"node_{primary_domain}_{base_name}"
+        
+        # Clean the UI display name
+        raw_friendly = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or base_name.replace("_", " ").title()
+        friendly_name = raw_friendly
+        for display_suffix in [" Battery", " Power", " Temperature", " Humidity", " Identify", " Firmware", " Linkquality"]:
+            if friendly_name.endswith(display_suffix):
+                friendly_name = friendly_name[:-len(display_suffix)]
+                break
+
+        # Dynamically build the JSON pointers
+        pointers = {}
+        for child in entity_group:
+            c_domain, c_name = child.split(".", 1)
+            
+            if c_name.startswith(base_name) and c_name != base_name:
+                suffix = c_name.replace(base_name, "").strip("_")
+            else:
+                suffix = c_name.replace(primary_name, "").strip("_") if c_name.startswith(primary_name) else ""
+            
+            key_prefix = suffix if suffix else c_domain
+            pointers[f"{key_prefix}_id"] = child
+
+       # --- THE TWO-FACTOR GROUP DETECTOR ---
+        attributes = physical_entities[primary_entity].get("attributes", {})
+        
+        # Factor 1: The Native HASS Fingerprint (For obedient integrations)
+        has_group_attr = (
+            isinstance(attributes.get("entity_id"), list) or 
+            isinstance(attributes.get("group_members"), list) or
+            attributes.get("is_hue_group") is True
         )
         
-        # Topology Routing: Link to the room if HASS knows it, otherwise dump in the inbox
-        target_area_uid = entity_to_area.get(entity_id)
-        if target_area_uid:
+        # Factor 2: The Orphaned Lexical Net (For non-compliant integrations like Cast/Hue)
+        is_orphan = primary_entity in orphaned_entities
+        is_lexical_group = False
+        if is_orphan:
+            # We already stripped the domain, so we just check the base name
+            if primary_name.startswith("all_") or primary_name.endswith(("_group", "_groups", "_speakers", "_lights")):
+                is_lexical_group = True
+
+        is_group = has_group_attr or is_lexical_group
+
+        # ---> THE UPSERT BLOCK <---
+        db.upsert_lore(
+            uid=uid,
+            node_type="concept" if is_group else ("hardware" if primary_domain not in ["script", "automation", "scene"] else "routine"),
+            display_name=friendly_name,
+            new_pointers=pointers,
+            new_traits={"sync_status": "auto_sorted", "domain": primary_domain, "is_group": is_group}
+        )
+
+        # --- THE DOMAIN ROUTER ---
+        target_area_uid = None
+        for e in entity_group:
+            if entity_to_area.get(e):
+                target_area_uid = entity_to_area.get(e)
+                break
+        
+        if is_group:
+            db.upsert_lore("sys_helpers", "concept", "System Helpers")
+            db.create_relationship(uid, "sys_helpers", "is_helper_for")
+        elif target_area_uid:
             db.create_relationship(uid, target_area_uid, "located_in")
+        elif primary_domain in ["script", "scene", "automation"]:
+            db.upsert_lore("sys_logic", "concept", "System Logic")
+            db.create_relationship(uid, "sys_logic", "is_logic_for")
+        elif primary_domain in ["input_boolean", "input_number", "input_text", "input_select", "input_button", "timer", "todo"]:
+            db.upsert_lore("sys_helpers", "concept", "System Helpers")
+            db.create_relationship(uid, "sys_helpers", "is_helper_for")
+        elif primary_domain in ["sun", "weather", "zone", "person", "device_tracker"]:
+            db.upsert_lore("sys_environment", "concept", "Environment & Tracking")
+            db.create_relationship(uid, "sys_environment", "tracks")
+        elif primary_domain in ["notify", "tts", "stt", "conversation", "event"]:
+            db.upsert_lore("sys_services", "concept", "System Services")
+            db.create_relationship(uid, "sys_services", "provides_service")
+        elif primary_domain in ["update", "sensor", "binary_sensor"]:
+            db.upsert_lore("sys_diagnostics", "concept", "System Diagnostics")
+            db.create_relationship(uid, "sys_diagnostics", "monitors")
         else:
-            db.create_relationship(uid, "concept_unassigned_inbox", "requires_triage")
+            db.create_relationship(uid, "unassigned_inbox", "requires_triage")
             
         new_nodes_count += 1
 
-    logger.info(f"[*] Sync Complete: Minted {new_nodes_count} hardware stubs and mapped spatial topology.")
+    logger.info(f"[*] Sync Complete: Collapsed registry into {new_nodes_count} distinct nodes.")
 
 if __name__ == "__main__":
     sync_hardware_graph()

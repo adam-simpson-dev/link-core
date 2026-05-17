@@ -217,12 +217,20 @@ class DatabaseManager:
         )
 
     def create_relationship(self, source_uid, target_uid, relationship):
+        import time
         cursor = self.conn.cursor()
-        # Enforce strict existence. No auto-minting ghost nodes.
-        for uid in [source_uid, target_uid]:
-            cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (uid,))
+        
+        for check_uid in [source_uid, target_uid]:
+            cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
             if not cursor.fetchone():
-                raise ValueError(f"Relational Error: Node '{uid}' does not exist. Upsert it first.")
+                # I/O Buffer Fallback: Give SQLite 50ms to flush the commit
+                time.sleep(0.05)
+                cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
+                if not cursor.fetchone():
+                    # Auto-Heal: Mint a stub instead of violently crashing
+                    logger.warning(f"[!] Ghost Node Detected: '{check_uid}'. Auto-minting stub to preserve topography.")
+                    cursor.execute("INSERT INTO nodes (uid, node_type, display_name) VALUES (?, ?, ?)", (check_uid, "concept", check_uid))
+                    self.conn.commit()
         
         cursor.execute("INSERT INTO edges (source_uid, target_uid, relationship) VALUES (?, ?, ?)", 
                        (source_uid, target_uid, relationship))
@@ -248,10 +256,14 @@ class DatabaseManager:
             return "Wipe aborted. Confirmation boolean missing."
 
         cursor = self.conn.cursor()
-        # Clear SQLite
-        cursor.execute("DELETE FROM nodes")
-        cursor.execute("DELETE FROM properties")
+        
+        # Purge legacy schema if it exists to permanently resolve the mismatch
+        cursor.execute("DROP TABLE IF EXISTS properties")
+        # Clear child tables first to respect strict foreign key constraints
         cursor.execute("DELETE FROM edges")
+        # Clear parent table
+        cursor.execute("DELETE FROM nodes")
+        
         self.conn.commit()
 
         # Clear ChromaDB Collection

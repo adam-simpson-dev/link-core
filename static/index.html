@@ -115,11 +115,6 @@
         let hoverNode = null; 
 
         const Graph = ForceGraph3D()(elem)
-            .nodeLabel(node => {
-                return `<div style="background: rgba(0, 15, 25, 0.9); border: 1px solid #00ffff; padding: 4px 8px; border-radius: 4px; color: #fff; font-size: 12px; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0,255,255,0.3);">
-                            ${node.name ? node.name.toUpperCase() : "UNKNOWN"}
-                        </div>`;
-            })
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
                 // Base size increased slightly for better visibility
@@ -140,7 +135,7 @@
                 const label = new SpriteText(node.name ? node.name.toUpperCase() : "UNKNOWN");
                 const opacity = node.textOpacity || 0.4; // Fallback to 0.4 if undefined
                 label.color = `rgba(0, 255, 255, ${opacity})`; 
-                label.textHeight = Math.max(2.5, size * 0.4); 
+                label.textHeight = Math.max(4, size * 0.6); 
                 label.position.y = size + 4; 
                 group.add(label);
 
@@ -215,7 +210,7 @@
 
         resetIdleTimer();
             
-// --- HIGH-PERFORMANCE TELEMETRY RENDER LOOP ---
+        // --- HIGH-PERFORMANCE TELEMETRY RENDER LOOP ---
         (function animateTelemetry() {
             requestAnimationFrame(animateTelemetry);
 
@@ -278,7 +273,7 @@
             if (isIdle && Date.now() - idleStartTime > 2000) {
                 const distance = Math.hypot(cam.position.x, cam.position.z);
                 const currentAngle = Math.atan2(cam.position.z, cam.position.x);
-                const newAngle = currentAngle + 0.001;
+                const newAngle = currentAngle + 0.0008; // Adjust rotation speed here
                 
                 Graph.cameraPosition({
                     x: distance * Math.cos(newAngle),
