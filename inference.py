@@ -65,7 +65,7 @@ class InferenceEngine:
             return [self._unpack_protobuf(v) for v in obj]
         return obj
 
-    def think(self, system_prompt: str, history: list):
+    def think(self, system_prompt: str, history: list, tool_mode: str = "AUTO"):
         """The cognitive bridge. Sends the state and waits for a decision."""
         
         # Initialize the model dynamically with the current system state & LORE
