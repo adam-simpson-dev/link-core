@@ -1,6 +1,9 @@
 import os
+from dotenv import load_dotenv
 import google.generativeai as genai
 from tools import TOOL_SCHEMAS
+
+load_dotenv()
 
 class InferenceEngine:
     def __init__(self):
@@ -62,7 +65,7 @@ class InferenceEngine:
             return [self._unpack_protobuf(v) for v in obj]
         return obj
 
-    def think(self, system_prompt: str, history: list):
+    def think(self, system_prompt: str, history: list, tool_mode: str = "AUTO"):
         """The cognitive bridge. Sends the state and waits for a decision."""
         
         # Initialize the model dynamically with the current system state & LORE
@@ -72,11 +75,18 @@ class InferenceEngine:
             tools=self.gemini_tools
         )
 
+        gemini_history = self.format_history(history)
+
+        # Safely omit the config in AUTO mode to prevent SDK dictionary crashes
+        kwargs = {}
+        if tool_mode != "AUTO":
+            kwargs["tool_config"] = {"function_calling_config": {"mode": tool_mode}}
+
         # Build the conversation payload
         gemini_history = self.format_history(history)
         
         try:
-            response = model.generate_content(gemini_history)
+            response = model.generate_content(gemini_history, **kwargs)
             
             # Use a generator to find the first part that contains a function call
             func_call = next((p.function_call for p in response.parts if p.function_call), None)
