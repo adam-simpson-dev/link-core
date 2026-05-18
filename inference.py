@@ -1,6 +1,9 @@
 import os
+from dotenv import load_dotenv
 import google.generativeai as genai
 from tools import TOOL_SCHEMAS
+
+load_dotenv()
 
 class InferenceEngine:
     def __init__(self):
