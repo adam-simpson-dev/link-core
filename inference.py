@@ -75,13 +75,18 @@ class InferenceEngine:
             tools=self.gemini_tools
         )
 
-        tool_config = {"function_calling_config": {"mode": tool_mode}}
+        gemini_history = self.format_history(history)
+
+        # Safely omit the config in AUTO mode to prevent SDK dictionary crashes
+        kwargs = {}
+        if tool_mode != "AUTO":
+            kwargs["tool_config"] = {"function_calling_config": {"mode": tool_mode}}
 
         # Build the conversation payload
         gemini_history = self.format_history(history)
         
         try:
-            response = model.generate_content(gemini_history, tool_config=tool_config)
+            response = model.generate_content(gemini_history, **kwargs)
             
             # Use a generator to find the first part that contains a function call
             func_call = next((p.function_call for p in response.parts if p.function_call), None)

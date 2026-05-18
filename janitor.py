@@ -33,20 +33,27 @@ def heal_grid():
         for o in orphans
     ]
 
+    # Fetch Valid Targets (The Map)
+    cursor.execute("SELECT uid, display_name FROM nodes WHERE node_type IN ('location', 'concept', 'hardware')")
+    valid_targets = [{"uid": row[0], "name": row[1]} for row in cursor.fetchall()]
+
     # The Sterile System Prompt
     janitor_prompt = (
         "You are the LINK-CORE Janitor daemon. Your sole purpose is to organize orphan nodes. "
-        "Review the provided JSON list of unassigned hardware and concepts. "
-        "Use the 'modify_lore' tool to link these nodes to their logical parent concepts, locations, or hardware using the 'create_links' array. "
-        "If you cannot logically deduce where a node belongs, do not guess. Leave it alone. "
+        "Review the provided JSON list of UNASSIGNED NODES. "
+        "Use the 'modify_lore' tool to link these nodes to their logical parent using ONLY the UIDs provided in the VALID TARGETS list. "
+        "Under no circumstances are you to hallucinate a UID. If a logical target does not exist in the VALID TARGETS list, leave the node unassigned. "
         "Do not output conversational text. Output ONLY the tool call."
     )
 
     # Execution
-    payload = f"UNASSIGNED NODES: {json.dumps(orphan_data, indent=2)}"
-    logger.info(f"[*] Analyzing {len(orphan_data)} orphan nodes...")
+    payload = (
+        f"VALID TARGETS: {json.dumps(valid_targets, indent=2)}\n\n"
+        f"UNASSIGNED NODES: {json.dumps(orphan_data, indent=2)}"
+    )
     
-    # Enforce Constrained Decoding to mathematically prevent JSON schema hallucinations
+    logger.info(f"[*] Analyzing {len(orphan_data)} orphan nodes against {len(valid_targets)} valid targets...")
+    
     decision = ai.think(janitor_prompt, [{"role": "user", "content": payload}], tool_mode="ANY")
 
     actions_taken = []
