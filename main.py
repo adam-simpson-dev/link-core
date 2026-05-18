@@ -30,6 +30,14 @@ class LinkCore:
             self.db = DatabaseManager()
             self.hass = HassClient()
             self.ai = InferenceEngine()
+
+            self.db.upsert_lore(
+                uid = "sys_core_memory",
+                node_type = "concept",
+                display_name = "System Core Memory",
+                aliases = ["system logs", "janitor report", "core state", "diagnositcs"]
+            )
+
             # Map JSON tool names to their handler functions for dynamic dispatching
             self.dispatch_map = {
                 # Node and Lore Management
@@ -44,6 +52,7 @@ class LinkCore:
                 "get_area_map": self.handle_get_areas,
                 "fire_home_event": self.handle_fire_event
             }
+
             logger.info("[*] LINK-CORE Dispatcher Active. Systems Nominal.")
         except Exception as e:
             # Catch boot failures (e.g., corrupted DB, missing ENV vars)
