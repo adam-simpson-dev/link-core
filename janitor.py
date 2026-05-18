@@ -12,7 +12,8 @@ logger = logging.getLogger("JANITOR")
 def heal_grid():
     logger.info("[*] Waking Janitor Agent for Grid Healing...")
     db = DatabaseManager()
-    ai = InferenceEngine()
+    # Explicitly restrict the daemon to memory modification. Strip all hardware control capabilities.
+    ai = InferenceEngine(allowed_tools=["modify_lore"])
 
     # Fetch the Orphans
     cursor = db.conn.cursor()
@@ -43,6 +44,7 @@ def heal_grid():
         "Review the provided JSON list of UNASSIGNED NODES. "
         "Use the 'modify_lore' tool to link these nodes to their logical parent using ONLY the UIDs provided in the VALID TARGETS list. "
         "Under no circumstances are you to hallucinate a UID. If a logical target does not exist in the VALID TARGETS list, leave the node unassigned. "
+        "You MUST populate the 'agent_reasoning' field in the tool call with a brief logical justification for your mappings so human admins can audit your deductions. "
         "Do not output conversational text. Output ONLY the tool call."
     )
 
@@ -61,14 +63,17 @@ def heal_grid():
     if decision["type"] == "tool_call" and decision["tool_name"] == "modify_lore":
         args = decision["arguments"]
         
+        # Extract the AI's internal reasoning
+        reasoning = args.get("agent_reasoning", "No logical justification provided by the agent.")
+        actions_taken.append(f"LOGIC AUDIT: {reasoning}")
+        
         # Execute the AI's re-mapping
         if "create_links" in args:
             for link in args["create_links"]:
                 try:
                     db.create_relationship(link["source"], link["target"], link["relation"])
-                    # Sever the tie to the inbox once mapped
                     cursor.execute("DELETE FROM edges WHERE source_uid = ? AND target_uid = 'unassigned_inbox'", (link["source"],))
-                    actions_taken.append(f"Linked {link['source']} to {link['target']} via {link['relation']}.")
+                    actions_taken.append(f"ACTION: Linked {link['source']} to {link['target']} via {link['relation']}.")
                 except Exception as e:
                     logger.warning(f"[!] Janitor failed to create link {link['source']} -> {link['target']}: {e}")
             
@@ -76,10 +81,10 @@ def heal_grid():
             logger.info(f"[*] Grid Healed: Mapped {len(args['create_links'])} orphans.")
         else:
             logger.info("[*] Janitor analyzed orphans but made no changes.")
-            actions_taken.append("Analyzed inbox. No logical mappings found.")
+            actions_taken.append("ACTION: Analyzed inbox. No logical mappings found.")
     else:
         logger.warning(f"[!] Janitor failed to generate valid tool execution: {decision}")
-        actions_taken.append("Failed to generate valid mapping strategy.")
+        actions_taken.append("FATAL: Failed to generate valid mapping strategy.")
 
     # Write the Machine Log to Core Memory
     current_time_iso = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")

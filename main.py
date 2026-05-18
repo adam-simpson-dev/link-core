@@ -35,7 +35,7 @@ class LinkCore:
                 uid = "sys_core_memory",
                 node_type = "concept",
                 display_name = "System Core Memory",
-                aliases = ["system logs", "janitor report", "core state", "diagnositcs"]
+                aliases = ["system logs", "janitor report", "core state", "diagnostics"]
             )
 
             # Map JSON tool names to their handler functions for dynamic dispatching
@@ -211,7 +211,7 @@ class LinkCore:
             return f"Successfully executed {service} on physical asset linked to {uid}."
         return f"Hardware Layer Rejection: HASS API call failed for {uid}."
 
-    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_uids=None) -> str:
+    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_uids=None, **kwargs) -> str:
         """Translates and strictly validates the LLM's batched Hybrid Schema tool call."""
         results = []
         allowed_types = {"hardware", "person", "location", "concept", "routine", "security_hardware"}

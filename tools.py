@@ -19,6 +19,10 @@ TOOL_SCHEMAS = [
         "parameters": {
             "type": "object",
             "properties": {
+                "agent_reasoning": {
+                    "type": "string", 
+                    "description": "A brief explanation of the logical deductions made to execute these changes. Highly required for autonomous agents."
+                },
                 "upsert_nodes": {
                     "type": "array",
                     "items": {

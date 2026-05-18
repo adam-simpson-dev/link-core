@@ -6,21 +6,22 @@ from tools import TOOL_SCHEMAS
 load_dotenv()
 
 class InferenceEngine:
-    def __init__(self):
+    def __init__(self, allowed_tools: list = None):
         self.api_key = os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("[-] CRITICAL: GEMINI_API_KEY missing from .env")
         
         genai.configure(api_key=self.api_key)
         
-        # Translate LINK-CORE tools into Gemini's native OpenAPI format
+        # Filter schemas based on authorization whitelist
         self.gemini_tools = [{"function_declarations": []}]
         for schema in TOOL_SCHEMAS:
-            self.gemini_tools[0]["function_declarations"].append({
-                "name": schema["name"],
-                "description": schema["description"],
-                "parameters": schema["parameters"]
-            })
+            if allowed_tools is None or schema["name"] in allowed_tools:
+                self.gemini_tools[0]["function_declarations"].append({
+                    "name": schema["name"],
+                    "description": schema["description"],
+                    "parameters": schema["parameters"]
+                })
 
     def format_history(self, internal_history):
         formatted = []
