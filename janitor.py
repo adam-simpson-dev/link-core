@@ -46,7 +46,9 @@ def heal_grid():
     payload = f"UNASSIGNED NODES: {json.dumps(orphan_data, indent=2)}"
     logger.info(f"[*] Analyzing {len(orphan_data)} orphan nodes...")
     
-    decision = ai.think(janitor_prompt, [{"role": "user", "content": payload}])
+    # Enforce Constrained Decoding to mathematically prevent JSON schema hallucinations
+    decision = ai.think(janitor_prompt, [{"role": "user", "content": payload}], tool_mode="ANY")
+
     actions_taken = []
 
     if decision["type"] == "tool_call" and decision["tool_name"] == "modify_lore":
