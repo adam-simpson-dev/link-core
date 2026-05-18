@@ -6,16 +6,46 @@ from contextlib import asynccontextmanager
 import logging
 from core_logger import setup_core_logger
 from main import LinkCore
+import asyncio
+import subprocess
+from datetime import datetime, timedelta
 
 setup_core_logger()
 logger = logging.getLogger("LINK-API")
+
+async def run_janitor_schedule():
+    """Background loop to fire the Janitor subprocess at 03:00 daily."""
+    while True:
+        now = datetime.now()
+        target = now.replace(hour=3, minute=0, second=0, microsecond=0)
+        
+        # If we are already past 3 AM today, schedule for tomorrow
+        if now >= target:
+            target += timedelta(days=1)
+            
+        sleep_seconds = (target - now).total_seconds()
+        logger.info(f"[*] Janitor daemon entering standby. Waking at {target.strftime('%H:%M:%S')} (in {int(sleep_seconds)}s).")
+        
+        try:
+            await asyncio.sleep(sleep_seconds)
+            logger.info("[*] Waking Nocturnal Janitor subprocess...")
+            # Execute completely isolated from the main API thread
+            subprocess.run(["python3", "janitor.py"], check=True)
+        except asyncio.CancelledError:
+            logger.info("[!] Janitor schedule interrupted by system shutdown.")
+            break
+        except Exception as e:
+            logger.error(f"[!] Janitor execution failed: {e}")
 
 # Lifespan management: The modern replacement for on_event
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("[*] LINK-CORE Service initializing...")
+    # Spawn the localized background task
+    janitor_task = asyncio.create_task(run_janitor_schedule())
     yield
     logger.info("[*] LINK-CORE Service shutting down...")
+    janitor_task.cancel()
     core.shutdown()
 
 app = FastAPI(title="LINK-CORE API", lifespan=lifespan)
