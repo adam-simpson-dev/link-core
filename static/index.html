@@ -250,12 +250,19 @@
             const halfWidth = elem.clientWidth / 2;
             const halfHeight = elem.clientHeight / 2;
 
+            // Calculate the true "Up" vector relative to the camera's current tilt
+            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+
             Object.keys(meshRegistry).forEach(uid => {
                 const group = meshRegistry[uid];
                 
                 if (group && group.children.length > 2) {
                     const pulse = group.children[1];
                     const label = group.children[2];
+
+                    // Extract the core size and force the text to orbit the top of the node
+                    const size = group.children[0].geometry.parameters.radius;
+                    label.position.copy(cameraUp).multiplyScalar(size + 4);
 
                     if (pulse.userData.isPinging) {
                         pulse.userData.progress += pulse.userData.speed;
