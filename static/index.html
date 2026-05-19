@@ -53,6 +53,7 @@
         #chat-input::placeholder { color: rgba(0, 255, 255, 0.3); }
     </style>
 </head>
+
 <body>
     <div class="ui-panel" id="left-panel">
         <div class="box">
@@ -115,8 +116,36 @@
         // --- OPTIMIZED GRAPH ENGINE ---
         const elem = document.getElementById('3d-graph');
         const meshRegistry = {}; 
-        let hoverNode = null;
+        let hoverNode = null; 
         let selectedNode = null;
+
+        function updateNodeColors() {
+            Object.keys(meshRegistry).forEach(uid => {
+                const group = meshRegistry[uid];
+                if (group && group.children.length > 0) {
+                    const coreMaterial = group.children[0].material;
+                    if (selectedNode && selectedNode.id === uid) {
+                        coreMaterial.color.setHex(0xff0033); // TRON RED
+                        coreMaterial.emissive.setHex(0x550011);
+                    } else {
+                        coreMaterial.color.setHex(0x0088ff); // DEFAULT BLUE
+                        coreMaterial.emissive.setHex(0x002255);
+                    }
+                }
+            });
+        }
+
+        // Localized Camera Orbit Logic
+        function focusCameraOnNode(node) {
+            const targetDistance = 200; 
+            const distRatio = 1 + targetDistance / Math.hypot(node.x, node.y, node.z);
+
+            const newPos = node.x || node.y || node.z
+                ? { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }
+                : { x: 0, y: 0, z: targetDistance }; 
+
+            Graph.cameraPosition(newPos, node, 2000);
+        }
 
         const Graph = ForceGraph3D()(elem)
             .nodeThreeObject(node => {
