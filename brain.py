@@ -42,15 +42,14 @@ class MessageHistory:
     def prune(self):
         """Weight-based slicing. Drops oldest context when token limit is breached."""
         while self.history and self._calculate_history_weight() > self.max_tokens:
-            # Drop the oldest message
             self.history.pop(0)
             
-            # Formatting constraint: Gemini/OpenAI both violently reject histories 
-            # that start with a floating tool response or assistant reply.
-            # We must aggressively purge until we find the next clean user prompt.
-            while self.history and self.history[0].get("role") != "user":
+            # API Constraint: History cannot start with a tool result without the originating tool call.
+            # If the new head of the history is a 'system' (tool_results) or 'model' (tool_calls),
+            # we must ensure it's structurally sound. Safest bet is to pop until we hit standard text.
+            while self.history and (self.history[0].get("role") == "system" or "tool_calls" in self.history[0]):
                 self.history.pop(0)
-
+                
     def get_context(self):
         return self.history
 

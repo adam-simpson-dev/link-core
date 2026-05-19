@@ -22,5 +22,8 @@ class VectorManager:
         return [meta['uid'] for meta in results['metadatas'][0]]
 
     def delete_vector(self, uid):
-        try: self.collection.delete(ids=[uid])
-        except: pass
+        try: 
+            self.collection.delete(ids=[uid])
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"[!] Failed to purge vector for '{uid}'. Semantic ghost may persist. Error: {e}")

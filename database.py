@@ -194,7 +194,7 @@ class DatabaseManager:
         }
 
     def get_node_context(self, uid: str) -> str:
-        """Pulls properties and strictly Depth-1 edges."""
+        """Pulls properties and strictly Depth-1 edges, enriched with display names."""
         cursor = self.conn.cursor()
         cursor.execute("SELECT node_type, display_name, system_pointers, traits FROM nodes WHERE uid = ?", (uid,))
         node = cursor.fetchone()
@@ -202,11 +202,23 @@ class DatabaseManager:
         
         n_type, name, pointers, traits = node
         
-        cursor.execute("SELECT relationship, target_uid FROM edges WHERE source_uid = ?", (uid,))
-        outgoing = [f"-[{row[0]}]-> {row[1]}" for row in cursor.fetchall()]
+        # Enriched Outgoing Links
+        cursor.execute("""
+            SELECT e.relationship, e.target_uid, n.display_name 
+            FROM edges e 
+            JOIN nodes n ON e.target_uid = n.uid 
+            WHERE e.source_uid = ?
+        """, (uid,))
+        outgoing = [f"-[{row[0]}]-> {row[1]} ({row[2]})" for row in cursor.fetchall()]
 
-        cursor.execute("SELECT relationship, source_uid FROM edges WHERE target_uid = ?", (uid,))
-        incoming = [f"<-[{row[0]}]- {row[1]}" for row in cursor.fetchall()]
+        # Enriched Incoming Links
+        cursor.execute("""
+            SELECT e.relationship, e.source_uid, n.display_name 
+            FROM edges e 
+            JOIN nodes n ON e.source_uid = n.uid 
+            WHERE e.target_uid = ?
+        """, (uid,))
+        incoming = [f"<-[{row[0]}]- {row[1]} ({row[2]})" for row in cursor.fetchall()]
         
         return (
             f"--- NODE ({n_type.upper()}): {uid} ({name}) ---\n"
@@ -217,20 +229,15 @@ class DatabaseManager:
         )
 
     def create_relationship(self, source_uid, target_uid, relationship):
-        import time
         cursor = self.conn.cursor()
         
         for check_uid in [source_uid, target_uid]:
             cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
             if not cursor.fetchone():
-                # I/O Buffer Fallback: Give SQLite 50ms to flush the commit
-                time.sleep(0.05)
-                cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (check_uid,))
-                if not cursor.fetchone():
-                    # Auto-Heal: Mint a stub instead of violently crashing
-                    logger.warning(f"[!] Ghost Node Detected: '{check_uid}'. Auto-minting stub to preserve topography.")
-                    cursor.execute("INSERT INTO nodes (uid, node_type, display_name) VALUES (?, ?, ?)", (check_uid, "concept", check_uid))
-                    self.conn.commit()
+                # Auto-Heal: Mint a stub immediately if the node is missing
+                logger.warning(f"[!] Ghost Node Detected: '{check_uid}'. Auto-minting stub to preserve topography.")
+                cursor.execute("INSERT INTO nodes (uid, node_type, display_name) VALUES (?, ?, ?)", (check_uid, "concept", check_uid))
+                self.conn.commit()
         
         cursor.execute("INSERT INTO edges (source_uid, target_uid, relationship) VALUES (?, ?, ?)", 
                        (source_uid, target_uid, relationship))

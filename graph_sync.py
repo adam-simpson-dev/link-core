@@ -166,6 +166,7 @@ def sync_hardware_graph():
             pointers[f"{key_prefix}_id"] = child
 
        # --- THE TWO-FACTOR GROUP DETECTOR ---
+       # Deals with HA groups that aren't fixed entities but rather groups of entities
         attributes = physical_entities[primary_entity].get("attributes", {})
         
         # Factor 1: The Native HASS Fingerprint (For obedient integrations)
@@ -195,35 +196,62 @@ def sync_hardware_graph():
         )
 
         # --- THE DOMAIN ROUTER ---
+        
+        # Spatial Routing (Physical Location)
         target_area_uid = None
         for e in entity_group:
             if entity_to_area.get(e):
                 target_area_uid = entity_to_area.get(e)
                 break
         
+        if target_area_uid:
+            db.create_relationship(uid, target_area_uid, "located_in")
+        elif not is_group and primary_domain not in ["script", "scene", "automation", "input_boolean", "input_number", "input_text", "input_select", "input_button", "timer", "todo", "sun", "weather", "zone", "person", "device_tracker", "notify", "tts", "stt", "conversation", "event"]:
+            db.create_relationship(uid, "unassigned_inbox", "requires_triage")
+
+        # Conceptual Routing (The Ontology Matrix)
+        # Format: "ha_domain": ("target_uid", "Target Display Name", "edge_relationship")
+        ONTOLOGY_MAP = {
+            "light": ("sys_lighting", "System Lighting", "is_lighting_device"),
+            "switch": ("sys_power", "System Power", "is_power_device"),
+            "media_player": ("sys_media", "System Media", "is_media_device"),
+            "climate": ("sys_climate", "System Climate", "is_climate_device"),
+            "fan": ("sys_climate", "System Climate", "is_climate_device"),
+            "water_heater": ("sys_climate", "System Climate", "is_climate_device"),
+            "script": ("sys_logic", "System Logic", "is_logic_for"),
+            "scene": ("sys_logic", "System Logic", "is_logic_for"),
+            "automation": ("sys_logic", "System Logic", "is_logic_for"),
+            "sun": ("sys_environment", "Environment", "tracks"),
+            "weather": ("sys_environment", "Environment", "tracks"),
+            "zone": ("sys_environment", "Environment", "tracks"),
+            "person": ("sys_environment", "Environment", "tracks"),
+            "device_tracker": ("sys_environment", "Environment", "tracks"),
+            "notify": ("sys_services", "System Services", "provides_service"),
+            "tts": ("sys_services", "System Services", "provides_service"),
+            "stt": ("sys_services", "System Services", "provides_service"),
+            "conversation": ("sys_services", "System Services", "provides_service"),
+            "event": ("sys_services", "System Services", "provides_service")
+        }
+
+        # Dynamic Assignment
         if is_group:
             db.upsert_lore("sys_helpers", "concept", "System Helpers")
             db.create_relationship(uid, "sys_helpers", "is_helper_for")
-        elif target_area_uid:
-            db.create_relationship(uid, target_area_uid, "located_in")
-        elif primary_domain in ["script", "scene", "automation"]:
-            db.upsert_lore("sys_logic", "concept", "System Logic")
-            db.create_relationship(uid, "sys_logic", "is_logic_for")
-        elif primary_domain in ["input_boolean", "input_number", "input_text", "input_select", "input_button", "timer", "todo"]:
-            db.upsert_lore("sys_helpers", "concept", "System Helpers")
-            db.create_relationship(uid, "sys_helpers", "is_helper_for")
-        elif primary_domain in ["sun", "weather", "zone", "person", "device_tracker"]:
-            db.upsert_lore("sys_environment", "concept", "Environment & Tracking")
-            db.create_relationship(uid, "sys_environment", "tracks")
-        elif primary_domain in ["notify", "tts", "stt", "conversation", "event"]:
-            db.upsert_lore("sys_services", "concept", "System Services")
-            db.create_relationship(uid, "sys_services", "provides_service")
-        elif primary_domain in ["update", "sensor", "binary_sensor"]:
+        elif primary_domain in ONTOLOGY_MAP:
+            target_uid, display_name, relation = ONTOLOGY_MAP[primary_domain]
+            db.upsert_lore(target_uid, "concept", display_name)
+            db.create_relationship(uid, target_uid, relation)
+            
+        # Hardcoded Catch for Diagnostics (Relies on string matching, not just domain)
+        if primary_domain in ["update", "sensor", "binary_sensor"]:
             db.upsert_lore("sys_diagnostics", "concept", "System Diagnostics")
             db.create_relationship(uid, "sys_diagnostics", "monitors")
-        else:
-            db.create_relationship(uid, "unassigned_inbox", "requires_triage")
             
+        # Helper Catch-all
+        if primary_domain in ["input_boolean", "input_number", "input_text", "input_select", "input_button", "timer", "todo"]:
+            db.upsert_lore("sys_helpers", "concept", "System Helpers")
+            db.create_relationship(uid, "sys_helpers", "is_helper_for")
+
         new_nodes_count += 1
 
     logger.info(f"[*] Sync Complete: Collapsed registry into {new_nodes_count} distinct nodes.")

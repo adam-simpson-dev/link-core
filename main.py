@@ -35,7 +35,7 @@ class LinkCore:
                 uid = "sys_core_memory",
                 node_type = "concept",
                 display_name = "System Core Memory",
-                aliases = ["system logs", "janitor report", "core state", "diagnositcs"]
+                aliases = ["system logs", "janitor report", "core state", "diagnostics"]
             )
 
             # Map JSON tool names to their handler functions for dynamic dispatching
@@ -158,7 +158,7 @@ class LinkCore:
         import json
         kwargs = kwargs or {}
         
-        # Fallback Check: Did the LLM bypass the abstraction layer?
+        # Fallback Check in case the LLM bypassed the abstraction layer
         if "." in uid and not uid.startswith("node_"):
             logger.warning(f"[!] Direct hardware addressing detected for '{uid}'. Activating Fallback Router.")
             domain = uid.split(".")[0]
@@ -166,7 +166,6 @@ class LinkCore:
             service_data.update(kwargs)
             success = self.hass.call_service(domain, service, service_data)
             
-            # Proactive Auto-Healing
             self.db.upsert_lore(
                 uid=f"node_{uid.replace('.', '_')}",
                 node_type="hardware",
@@ -176,42 +175,54 @@ class LinkCore:
 
         # Nominal Abstraction Route
         cursor = self.db.conn.cursor()
-        cursor.execute("SELECT node_type, system_pointers FROM nodes WHERE uid = ?", (uid,))
+        # Pull traits to identify domain
+        cursor.execute("SELECT node_type, system_pointers, traits FROM nodes WHERE uid = ?", (uid,))
         row = cursor.fetchone()
 
         if not row:
             return f"Execution Error: Targeted asset '{uid}' does not exist within the LORE engine."
 
-        node_type, sys_pointers_json = row
+        node_type, sys_pointers_json, traits_json = row
 
-        # Future Blackboard Architecture Anchor: Safety Intercept Block
+        # Air Gap security_hardware to push authentication to the physical device
         if node_type == "security_hardware":
             logger.warning(f"[!] Security-critical intercept triggered for asset: {uid}")
             return f"Execution Aborted: Intent routing for '{uid}' requires secondary authorization."
 
         try:
             pointers = json.loads(sys_pointers_json) if sys_pointers_json else {}
+            traits = json.loads(traits_json) if traits_json else {}
+            
+            # Smart pointer resolution
             hass_id = pointers.get("hass_id")
+            domain = traits.get("domain")
+            
+            if not hass_id and domain:
+                hass_id = pointers.get(f"{domain}_id")
+            if not hass_id and pointers:
+                # Ultimate fallback: grab the first value that matches the domain string
+                hass_id = next((v for v in pointers.values() if isinstance(v, str) and v.startswith(f"{domain}.")), list(pointers.values())[0])
+                
         except json.JSONDecodeError:
             return f"Execution Error: Hardware pointer payload corruption detected for {uid}."
 
         if not hass_id:
-            return f"Execution Error: Asset '{uid}' lacks a valid hardware target pointer (hass_id)."
+            return f"Execution Error: Asset '{uid}' lacks a valid hardware target pointer."
 
-        # Extract domain natively from the HASS identifier (e.g., 'light.kitchen_main' -> 'light')
-        domain = hass_id.split(".")[0]
+        # Extract domain natively from the HASS identifier
+        exec_domain = hass_id.split(".")[0]
         
         service_data = {"entity_id": hass_id}
         service_data.update(kwargs)
         
-        logger.info(f"[*] Dispatching Abracted HA Call: {domain}.{service} -> {service_data}")
-        success = self.hass.call_service(domain, service, service_data)
+        logger.info(f"[*] Dispatching Abracted HA Call: {exec_domain}.{service} -> {service_data}")
+        success = self.hass.call_service(exec_domain, service, service_data)
         
         if success:
             return f"Successfully executed {service} on physical asset linked to {uid}."
         return f"Hardware Layer Rejection: HASS API call failed for {uid}."
 
-    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_uids=None) -> str:
+    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_uids=None, **kwargs) -> str:
         """Translates and strictly validates the LLM's batched Hybrid Schema tool call."""
         results = []
         allowed_types = {"hardware", "person", "location", "concept", "routine", "security_hardware"}
@@ -251,18 +262,28 @@ class LinkCore:
         import json
         target_id = uid
 
-        # Fallback Check: Did the LLM bypass the abstraction layer?
+        # Check the LLM didn't bypass the abstraction layer
         if "." in uid and not uid.startswith("node_"):
             logger.warning(f"[!] Direct hardware inspection tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()
-            cursor.execute("SELECT system_pointers FROM nodes WHERE uid = ?", (uid,))
+            # Pull traits to identify domain
+            cursor.execute("SELECT system_pointers, traits FROM nodes WHERE uid = ?", (uid,))
             row = cursor.fetchone()
             if not row:
                 return f"Execution Error: Targeted asset '{uid}' does not exist within LORE."
             try:
                 pointers = json.loads(row[0]) if row[0] else {}
+                traits = json.loads(row[1]) if row[1] else {}
+                
+                # Smart pointer resolution
                 target_id = pointers.get("hass_id")
+                domain = traits.get("domain")
+                if not target_id and domain:
+                    target_id = pointers.get(f"{domain}_id")
+                if not target_id and pointers:
+                    target_id = next((v for v in pointers.values() if isinstance(v, str) and v.startswith(f"{domain}.")), list(pointers.values())[0])
+                    
             except json.JSONDecodeError:
                 return f"Execution Error: Hardware pointer corruption for {uid}."
             if not target_id:
@@ -299,23 +320,32 @@ class LinkCore:
         event_data = event_data or {}
         event_name = uid
 
-        # Fallback Check for unmapped automation hooks
+        #Check that the LLM didn't bypass the abstraction layer
         if not uid.startswith("node_"):
             logger.warning(f"[!] Direct event execution tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()
-            cursor.execute("SELECT node_type, system_pointers FROM nodes WHERE uid = ?", (uid,))
+            # Pull traits to identify domain
+            cursor.execute("SELECT node_type, system_pointers, traits FROM nodes WHERE uid = ?", (uid,))
             row = cursor.fetchone()
             if not row:
                 return f"Execution Error: Routine node '{uid}' not found in database."
             
-            node_type, sys_pointers = row
+            # Safety check to prevent firing devices
+            node_type, sys_pointers, traits_json = row
             if node_type not in {"routine", "hardware"}:
                 return f"Execution Blocked: Node '{uid}' is a {node_type}. Only routines can be fired."
                 
             try:
                 pointers = json.loads(sys_pointers) if sys_pointers else {}
+                traits = json.loads(traits_json) if traits_json else {}
+                
+                # Smart pointer routing
                 event_name = pointers.get("event_name") or pointers.get("hass_id")
+                domain = traits.get("domain")
+                if not event_name and domain:
+                    event_name = pointers.get(f"{domain}_id")
+                    
             except json.JSONDecodeError:
                 return f"Execution Error: Routine pointer payload corruption for {uid}."
 

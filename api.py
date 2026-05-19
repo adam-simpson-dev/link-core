@@ -29,8 +29,16 @@ async def run_janitor_schedule():
         try:
             await asyncio.sleep(sleep_seconds)
             logger.info("[*] Waking Nocturnal Janitor subprocess...")
-            # Execute completely isolated from the main API thread
-            subprocess.run(["python3", "janitor.py"], check=True)
+            # Execute asynchronously to protect the FastAPI event loop
+            process = await asyncio.create_subprocess_exec(
+                "python3", "janitor.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                logger.error(f"[!] Janitor execution failed. Exit code {process.returncode}: {stderr.decode()}")
         except asyncio.CancelledError:
             logger.info("[!] Janitor schedule interrupted by system shutdown.")
             break
