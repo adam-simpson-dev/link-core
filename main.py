@@ -7,6 +7,7 @@ from database import DatabaseManager
 from hass_client import HassClient
 from tools import get_tool_schema
 from inference import InferenceEngine
+from nlp_engine import NLPEngine
 
 setup_core_logger()
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class LinkCore:
         # Neural Pathways
         self.history = MessageHistory()
         self.brain = PromptManager()
+        self.nlp_engine = NLPEngine()
 
         try:
             self.db = DatabaseManager()
@@ -77,21 +79,29 @@ class LinkCore:
         }
         
     def process_natural_language(self, user_input: str):
-        """The ReAct (Reasoning & Acting) Loop."""
+        """Natural Language Pipeline Routing."""
         if self.state == "SAFE_MODE": return "System locked."
-
-        # Flush the radar buffer ONLY when a new cognitive process begins.
         self.db.last_accessed_uids.clear()
 
-        # Log user intent
+        # Blackboard Intent Analysis (Offline)
+        intent = self.nlp_engine.classify_intent(user_input)
+        logger.info(f"[*] Blackboard Classified Input Intent as: [{intent}]")
+
+        # Air-Gapped Security Intercept
+        if intent == "SECURITY_BYPASS":
+            logger.warning("[!] SECURITY INTERCEPT: Unauthenticated administrative command blocked.")
+            return "Physical or native application authentication required for security hardware modifications. Override denied."
+
         self.history.add_message("user", user_input)
-        
         iteration = 0
-        max_iterations = 5 # Circuit breaker to prevent infinite loop token drain
+        max_iterations = 5
 
         while iteration < max_iterations:
             iteration += 1
-            decision = self.ai.think(self.brain.get_system_prompt(self.state, self.last_error), self.history.get_context())
+            
+            # Dynamic Prompt Assembly based on the NLP intent
+            system_prompt = self.brain.get_system_prompt(self.state, self.last_error, intent=intent)
+            decision = self.ai.think(system_prompt, self.history.get_context())
             
             if decision["type"] == "error":
                 logger.error(f"[!] INFERENCE FATAL: {decision['content']}")
@@ -103,14 +113,10 @@ class LinkCore:
                 
             elif decision["type"] == "tool_call":
                 t_name, t_args = decision["tool_name"], decision["arguments"]
-                
-                # Standardized tool logging
                 self.history.add_message("model", "", tool_calls=[decision])
                 
                 result = self.process_tool_call(t_name, t_args)
                 obs_data = result.get("data", result.get("message", "Executed."))
-                
-                # Feed the observation back into the loop
                 self.history.add_message("system", str(obs_data), tool_results=[{"tool_name": t_name, "content": obs_data}])
 
         self.trip_breaker("LLM Recursive Loop Detected.")
@@ -159,18 +165,14 @@ class LinkCore:
         kwargs = kwargs or {}
         
         # Fallback Check in case the LLM bypassed the abstraction layer
-        if "." in uid and not uid.startswith("node_"):
+        if "." in uid:
             logger.warning(f"[!] Direct hardware addressing detected for '{uid}'. Activating Fallback Router.")
             domain = uid.split(".")[0]
             service_data = {"entity_id": uid}
             service_data.update(kwargs)
             success = self.hass.call_service(domain, service, service_data)
             
-            self.db.upsert_lore(
-                uid=f"node_{uid.replace('.', '_')}",
-                node_type="hardware",
-                new_pointers={"hass_id": uid}
-            )
+            self.db.upsert_lore(uid=f"{uid.replace('.', '_')}", node_type="hardware", new_pointers={"hass_id": uid})
             return f"Fallback Execution: Action dispatched to unmapped entity {uid}."
 
         # Nominal Abstraction Route
@@ -263,7 +265,7 @@ class LinkCore:
         target_id = uid
 
         # Check the LLM didn't bypass the abstraction layer
-        if "." in uid and not uid.startswith("node_"):
+        if "." in uid:
             logger.warning(f"[!] Direct hardware inspection tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()
@@ -321,7 +323,7 @@ class LinkCore:
         event_name = uid
 
         #Check that the LLM didn't bypass the abstraction layer
-        if not uid.startswith("node_"):
+        if "." in uid:
             logger.warning(f"[!] Direct event execution tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()

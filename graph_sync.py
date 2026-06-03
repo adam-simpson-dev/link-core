@@ -49,15 +49,17 @@ def sync_hardware_graph():
 
     # Pull the Cognitive Map
     cursor = db.conn.cursor()
-    cursor.execute("SELECT uid, system_pointers FROM nodes WHERE node_type = 'hardware'")
+    cursor.execute("SELECT uid, system_pointers FROM nodes")
     mapped_nodes = cursor.fetchall()
 
+    # Scan all pointer values globally to find registered HASS IDs
     mapped_hass_ids = set()
     for uid, pointers_json in mapped_nodes:
         try:
             pointers = json.loads(pointers_json) if pointers_json else {}
-            if "hass_id" in pointers:
-                mapped_hass_ids.add(pointers["hass_id"])
+            for val in pointers.values():
+                if isinstance(val, str) and "." in val:
+                    mapped_hass_ids.add(val)
         except json.JSONDecodeError:
             continue
 
@@ -142,7 +144,7 @@ def sync_hardware_graph():
                 base_name = base_name[:-len(suffix)]
                 break
                 
-        uid = f"node_{primary_domain}_{base_name}"
+        uid = f"{primary_domain}_{base_name}"
         
         # Clean the UI display name
         raw_friendly = physical_entities[primary_entity].get("attributes", {}).get("friendly_name") or base_name.replace("_", " ").title()
@@ -186,7 +188,7 @@ def sync_hardware_graph():
 
         is_group = has_group_attr or is_lexical_group
 
-        # ---> THE UPSERT BLOCK <---
+        # --- THE UPSERT BLOCK ---
         db.upsert_lore(
             uid=uid,
             node_type="concept" if is_group else ("hardware" if primary_domain not in ["script", "automation", "scene"] else "routine"),
