@@ -89,8 +89,7 @@ def main():
         elif base_cmd == "inspect":
             tool = "inspect_entity"
             parts = arg_str.split(" ", 1)
-            args = {"entity_id": parts[0]}
-            # If the user provides a second argument, treat it as the ISO history timestamp
+            args = {"uid": parts[0]}
             if len(parts) > 1:
                 args["start_time_iso"] = parts[1]
 
