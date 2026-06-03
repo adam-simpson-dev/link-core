@@ -7,7 +7,9 @@
         body { margin: 0; background: #000510; color: #00ffff; font-family: monospace; overflow: hidden; }
         .ui-panel { position: absolute; z-index: 10; pointer-events: none; }
         #left-panel { top: 10px; left: 10px; width: 300px; }
-        #right-panel { top: 10px; right: 10px; width: 280px; }
+
+        /* The Inspector Panel */
+        #right-panel { top: 10px; right: 10px; width: 30vw; min-width: 300px; max-width: 500px; }
         
         /* The Terminal Panel */
         #terminal-panel { bottom: 20px; left: 50%; transform: translateX(-50%); width: 600px; }
@@ -22,9 +24,10 @@
         
         h2 { margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #ffffff; text-shadow: 0 0 8px #00ffff; letter-spacing: 2px;}
         
-        .prop-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0,255,255,0.2); padding: 4px 0;}
-        .prop-key { color: #88ffff; }
-        .prop-val { color: #ffffff; text-align: right;}
+        /* Word-wrapping & Stacked Properties for Readability (Good for code and entity IDs)*/
+        .prop-row { display: flex; flex-direction: column; border-bottom: 1px solid rgba(0,255,255,0.2); padding: 6px 0;}
+        .prop-key { color: #88ffff; font-size: 11px; margin-bottom: 2px; }
+        .prop-val { color: #ffffff; font-size: 13px; word-wrap: break-word; overflow-wrap: anywhere; white-space: normal !important;}
 
         /* UI Collapsible Mechanics */
         .box-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -50,6 +53,7 @@
         #chat-input::placeholder { color: rgba(0, 255, 255, 0.3); }
     </style>
 </head>
+
 <body>
     <div class="ui-panel" id="left-panel">
         <div class="box">
@@ -68,7 +72,7 @@
     </div>
 
     <div class="ui-panel" id="right-panel">
-        <div class="box" id="inspector-box" style="display: none;">
+        <div class="box" id="inspector-box" style="display: none; max-height: 70vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #00ffff rgba(0,0,0,0.5);">
             <h2 id="inspect-name">NODE</h2>
             <div style="font-size: 10px; color: #888; margin-bottom: 10px;" id="inspect-uid"></div>
             <div id="inspect-props"></div>
@@ -113,11 +117,39 @@
         const elem = document.getElementById('3d-graph');
         const meshRegistry = {}; 
         let hoverNode = null; 
+        let selectedNode = null;
+
+        function updateNodeColors() {
+            Object.keys(meshRegistry).forEach(uid => {
+                const group = meshRegistry[uid];
+                if (group && group.children.length > 0) {
+                    const coreMaterial = group.children[0].material;
+                    if (selectedNode && selectedNode.id === uid) {
+                        coreMaterial.color.setHex(0xff0033); // TRON RED
+                        coreMaterial.emissive.setHex(0x550011);
+                    } else {
+                        coreMaterial.color.setHex(0x0088ff); // DEFAULT BLUE
+                        coreMaterial.emissive.setHex(0x002255);
+                    }
+                }
+            });
+        }
+
+        // Localized Camera Orbit Logic
+        function focusCameraOnNode(node) {
+            const targetDistance = 200; 
+            const distRatio = 1 + targetDistance / Math.hypot(node.x, node.y, node.z);
+
+            const newPos = node.x || node.y || node.z
+                ? { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }
+                : { x: 0, y: 0, z: targetDistance }; 
+
+            Graph.cameraPosition(newPos, node, 2000);
+        }
 
         const Graph = ForceGraph3D()(elem)
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
-                // Base size increased slightly for better visibility
                 const size = node.val || 5; 
 
                 // Static Core
@@ -133,7 +165,7 @@
 
                 // Text Labels
                 const label = new SpriteText(node.name ? node.name.toUpperCase() : "UNKNOWN");
-                const opacity = node.textOpacity || 0.4; // Fallback to 0.4 if undefined
+                const opacity = node.textOpacity || 0.4; 
                 label.color = `rgba(0, 255, 255, ${opacity})`; 
                 label.textHeight = Math.max(4, size * 0.6); 
                 label.position.y = size + 4; 
@@ -146,19 +178,22 @@
                 hoverNode = node || null;
                 elem.style.cursor = node ? 'pointer' : null;
             })
-            // Clicking a node fetches its data and opens the inspector panel
-            .onNodeClick(node => fetchNodeData(node.id))
-            // Background click closes the inspector panel
+            .onNodeClick(node => {
+                selectedNode = node;
+                updateNodeColors();
+                focusCameraOnNode(node);
+                fetchNodeData(node.id);
+            })
             .onBackgroundClick(() => {
+                selectedNode = null;
+                updateNodeColors();
                 document.getElementById('inspector-box').style.display = 'none';
             })
             .linkColor(() => 'rgba(0, 255, 255, 0.3)')
             .linkWidth(0.5);
 
         // --- PHYSICS OVERRIDES ---
-        // Repulsion force - Reduce for Clusters, increase for space
         Graph.d3Force('charge').strength(-15); 
-        // Rubber Band Force - Increase to loosen clusters, default is 30
         Graph.d3Force('link').distance(60);
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -179,16 +214,15 @@
             isIdle = false;
             clearTimeout(interactionTimeout);
             
-            // Wait 4 seconds after the user stops interacting
             interactionTimeout = setTimeout(() => {
                 isIdle = true;
                 idleStartTime = Date.now();
-                Graph.zoomToFit(2000, 100); 
+                if (!selectedNode) Graph.zoomToFit(2000, 100); 
             }, 4000);
         }
 
         // --- 2D PROXIMITY FLASHLIGHT ---
-        const mousePos = { x: -9999, y: -9999 }; // Default off-screen
+        const mousePos = { x: -9999, y: -9999 }; 
         
         elem.addEventListener('mousemove', (e) => {
             const rect = elem.getBoundingClientRect();
@@ -198,12 +232,10 @@
         });
         
         elem.addEventListener('mouseleave', () => {
-            // When mouse leaves the canvas, hide all text
             mousePos.x = -9999;
             mousePos.y = -9999;
         });
-        // Bind to all standard interaction events on the graph container
-        //elem.addEventListener('mousemove', resetIdleTimer);
+        
         elem.addEventListener('mousedown', resetIdleTimer);
         elem.addEventListener('wheel', resetIdleTimer);
         elem.addEventListener('touchstart', resetIdleTimer);
@@ -215,9 +247,11 @@
             requestAnimationFrame(animateTelemetry);
 
             const cam = Graph.camera();
-            // Cache screen dimensions for pixel conversion
             const halfWidth = elem.clientWidth / 2;
             const halfHeight = elem.clientHeight / 2;
+
+            // Calculate the true "Up" vector relative to the camera's current tilt
+            const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
 
             Object.keys(meshRegistry).forEach(uid => {
                 const group = meshRegistry[uid];
@@ -226,7 +260,10 @@
                     const pulse = group.children[1];
                     const label = group.children[2];
 
-                    // --- Radar Ping Logic ---
+                    // Extract the core size and force the text to orbit the top of the node
+                    const size = group.children[0].geometry.parameters.radius;
+                    label.position.copy(cameraUp).multiplyScalar(size + 4);
+
                     if (pulse.userData.isPinging) {
                         pulse.userData.progress += pulse.userData.speed;
                         const currentScale = 1 + (pulse.userData.progress * 1.5);
@@ -241,27 +278,19 @@
                         }
                     }
 
-                    // --- 2D Proximity Text Fading ---
-                    // Clone the node's true 3D position
                     const nodePos = group.position.clone();
-                    
-                    // Project the 3D point onto the 2D camera plane (returns -1 to +1 NDC)
                     nodePos.project(cam);
                     
-                    // Convert NDC coordinates to actual screen pixels
                     const nodePixelX = (nodePos.x * halfWidth) + halfWidth;
                     const nodePixelY = -(nodePos.y * halfHeight) + halfHeight;
 
-                    // Calculate Euclidean distance from the mouse pointer
                     const dx = mousePos.x - nodePixelX;
                     const dy = mousePos.y - nodePixelY;
                     const pixelDistance = Math.sqrt(dx * dx + dy * dy);
 
-                    // Apply Opacity based on proximity
-                    const hoverRadius = 120; // Pixels. Adjust this to make the "flashlight" wider or narrower.
+                    const hoverRadius = 120; 
                     
                     if (pixelDistance < hoverRadius) {
-                        // Math: At 0 pixels (direct hit), opacity is 1.0. At 120 pixels, opacity is 0.0.
                         label.material.opacity = 1.0 - (pixelDistance / hoverRadius);
                     } else {
                         label.material.opacity = 0;
@@ -269,17 +298,23 @@
                 }
             });
             
-            // --- Cinematic Orbit ---
+            // --- CINEMATIC IDLE ORBIT ---
             if (isIdle && Date.now() - idleStartTime > 2000) {
-                const distance = Math.hypot(cam.position.x, cam.position.z);
-                const currentAngle = Math.atan2(cam.position.z, cam.position.x);
-                const newAngle = currentAngle + 0.0008; // Adjust rotation speed here
+                const targetX = selectedNode ? selectedNode.x : 0;
+                const targetZ = selectedNode ? selectedNode.z : 0;
+                
+                const dx = cam.position.x - targetX;
+                const dz = cam.position.z - targetZ;
+                
+                const distance = Math.hypot(dx, dz);
+                const currentAngle = Math.atan2(dz, dx);
+                const newAngle = currentAngle + 0.0008; 
                 
                 Graph.cameraPosition({
-                    x: distance * Math.cos(newAngle),
-                    z: distance * Math.sin(newAngle),
+                    x: targetX + distance * Math.cos(newAngle),
+                    z: targetZ + distance * Math.sin(newAngle),
                     y: cam.position.y 
-                });
+                }, selectedNode || {x: 0, y: 0, z: 0});
             }
         })();
 
@@ -338,14 +373,14 @@
 
                     data.nodes.forEach(node => {
                         const links = nodeDegree[node.id] || 0;
-                        // Physical Size calculation
                         node.val = Math.max(5, Math.min(links * 1.5, 15)); 
-                        
-                        // Opacity Calculation: Starts at 0.4. Each link adds 0.05 opacity, capping at 0.8.
                         node.textOpacity = Math.max(0.4, Math.min(0.4 + (links * 0.05), 0.8));
                     });
 
                     Graph.graphData(data);
+                    
+                    // Maintain selected colour on data refresh
+                    setTimeout(updateNodeColors, 100);
                 }
             } catch (e) {
                 console.error("[!] Graph Sync Failed. Check API output:", e);
@@ -364,9 +399,7 @@
                 statusEl.style.color = data.state === 'NOMINAL' ? '#00ffff' : '#ff0044';
                 
                 if (data.memory && data.memory.length > 0) {
-                    // Safe filter: Only System observations or AI Tool Calls
                     const agenticMemory = data.memory.filter(m => m.role === 'system' || (m.role === 'model' && m.tool_calls));
-                    
                     const recentMemory = agenticMemory.slice(-6);
                     
                     const log = recentMemory.map(m => {
