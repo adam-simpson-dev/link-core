@@ -191,7 +191,7 @@ def sync_hardware_graph():
         # --- THE UPSERT BLOCK ---
         db.upsert_lore(
             uid=uid,
-            node_type="concept" if is_group else ("hardware" if primary_domain not in ["script", "automation", "scene"] else "routine"),
+            node_type="hardware" if primary_domain not in ["script", "automation", "scene"] else "routine",
             display_name=friendly_name,
             new_pointers=pointers,
             new_traits={"sync_status": "auto_sorted", "domain": primary_domain, "is_group": is_group}

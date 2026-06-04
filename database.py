@@ -301,6 +301,10 @@ class DatabaseManager:
         for uid, name, aliases in concept_nodes:
             if uid in processed_uids: continue
                 
+            # The Core Shield: Do not compress root system architecture or the inbox
+            if uid.startswith("sys_") or uid == "unassigned_inbox":
+                continue
+
             # Regenerate the exact envelope text used for vector indexing
             envelope = self.generate_semantic_envelope(uid, name, aliases)
             
