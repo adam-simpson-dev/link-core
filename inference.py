@@ -89,8 +89,13 @@ class InferenceEngine:
         try:
             response = model.generate_content(gemini_history, **kwargs)
             
+            # The API Shield: Catch malformed tool calls (Finish Reason 10) before they crash the parser
+            if not response.candidates or not response.candidates[0].content.parts:
+                reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+                return {"type": "error", "content": f"Inference Rejected. Finish Reason: {reason}. The LLM generated a malformed tool call."}
+            
             # Use a generator to find the first part that contains a function call
-            func_call = next((p.function_call for p in response.parts if p.function_call), None)
+            func_call = next((p.function_call for p in response.candidates[0].content.parts if p.function_call), None)
 
             if func_call:
                 return {
@@ -99,7 +104,7 @@ class InferenceEngine:
                     "arguments": self._unpack_protobuf(func_call.args)
                 }
                 
-            # Only access .text if no function call was found
+            # Only access .text if we know valid text parts exist
             return {"type": "text", "content": response.text}
                 
         except Exception as e:

@@ -240,9 +240,30 @@ class LinkCore:
 
         if upsert_nodes:
             for node in upsert_nodes:
-                uid = node.get("uid")
+                raw_uid = node.get("uid")
                 node_type = node.get("node_type")
-                if not uid or node_type not in allowed_types: continue
+                if not raw_uid or node_type not in allowed_types: continue
+                
+                # Maps node_type to the strict graph namespace
+                prefix_map = {
+                    "location": "loc_",
+                    "person": "person_",
+                    "pet": "pet_",
+                    "concept": "concept_",
+                    "routine": "routine_"
+                }
+                
+                uid = raw_uid
+                if node_type in prefix_map:
+                    expected_prefix = prefix_map[node_type]
+                    if not uid.startswith(expected_prefix):
+                        # Strip any rogue prefixes the LLM might have guessed
+                        for val in prefix_map.values():
+                            if uid.startswith(val):
+                                uid = uid.replace(val, "", 1)
+                                break
+                        # Enforce the mathematical boundary
+                        uid = f"{expected_prefix}{uid}"
                 
                 self.db.upsert_lore(
                     uid=uid, node_type=node_type, display_name=node.get("display_name"),
