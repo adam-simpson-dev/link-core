@@ -14,26 +14,26 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "modify_lore",
-        "description": "Omni-tool to batch update memory. Mint nodes, link entities, or delete nodes using the Hybrid Schema.",
+        "description": "Omni-tool to batch update memory. Mint nodes, link entities, delete nodes, or sever relationships using the Hybrid Schema.",
         "risk_level": "moderate",
         "parameters": {
             "type": "object",
             "properties": {
                 "agent_reasoning": {
                     "type": "string", 
-                    "description": "A brief explanation of the logical deductions made to execute these changes. Highly required for autonomous agents."
+                    "description": "Brief explanation of logical deductions made to execute these changes."
                 },
                 "upsert_nodes": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "uid": {"type": "string", "description": "Immutable primary key (e.g., loc_kitchen, user_john)"},
+                            "uid": {"type": "string", "description": "Immutable primary key (e.g., button_k2so_stop)"},
                             "node_type": {"type": "string", "enum": ["hardware", "security_hardware", "routine", "location", "person", "pet", "concept"]},
-                            "display_name": {"type": "string", "description": "Clean GUI string"},
+                            "display_name": {"type": "string"},
                             "aliases": {"type": "array", "items": {"type": "string"}},
-                            "new_traits": {"type": "object", "description": "Squishy memory sandbox"},
-                            "new_pointers": {"type": "object", "description": "Volatile execution IDs"}
+                            "new_traits": {"type": "object"},
+                            "new_pointers": {"type": "object"}
                         },
                         "required": ["uid", "node_type"]
                     }
@@ -50,9 +50,34 @@ TOOL_SCHEMAS = [
                         "required": ["source", "target", "relation"]
                     }
                 },
+                "delete_links": {
+                    "type": "array",
+                    "description": "Sever specific edges between nodes without deleting the nodes themselves.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source": {"type": "string"},
+                            "target": {"type": "string"},
+                            "relation": {"type": "string"}
+                        },
+                        "required": ["source", "target", "relation"]
+                    }
+                },
                 "delete_uids": {
                     "type": "array",
                     "items": {"type": "string"}
+                },
+                "rename_uids": {
+                    "type": "array",
+                    "description": "Migrate an immutable node UID to a clean, descriptive identifier while completely preserving its structural links and JSON payloads.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_uid": {"type": "string"},
+                            "new_uid": {"type": "string"}
+                        },
+                        "required": ["old_uid", "new_uid"]
+                    }
                 }
             }
         }

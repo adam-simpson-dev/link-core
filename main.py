@@ -7,6 +7,7 @@ from database import DatabaseManager
 from hass_client import HassClient
 from tools import get_tool_schema
 from inference import InferenceEngine
+from nlp_engine import NLPEngine
 
 setup_core_logger()
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class LinkCore:
         # Neural Pathways
         self.history = MessageHistory()
         self.brain = PromptManager()
+        self.nlp_engine = NLPEngine()
 
         try:
             self.db = DatabaseManager()
@@ -77,21 +79,29 @@ class LinkCore:
         }
         
     def process_natural_language(self, user_input: str):
-        """The ReAct (Reasoning & Acting) Loop."""
+        """Natural Language Pipeline Routing."""
         if self.state == "SAFE_MODE": return "System locked."
-
-        # Flush the radar buffer ONLY when a new cognitive process begins.
         self.db.last_accessed_uids.clear()
 
-        # Log user intent
+        # Blackboard Intent Analysis (Offline)
+        intent = self.nlp_engine.classify_intent(user_input)
+        logger.info(f"[*] Blackboard Classified Input Intent as: [{intent}]")
+
+        # Air-Gapped Security Intercept
+        if intent == "SECURITY_BYPASS":
+            logger.warning("[!] SECURITY INTERCEPT: Unauthenticated administrative command blocked.")
+            return "Physical or native application authentication required for security hardware modifications. Override denied."
+
         self.history.add_message("user", user_input)
-        
         iteration = 0
-        max_iterations = 5 # Circuit breaker to prevent infinite loop token drain
+        max_iterations = 5
 
         while iteration < max_iterations:
             iteration += 1
-            decision = self.ai.think(self.brain.get_system_prompt(self.state, self.last_error), self.history.get_context())
+            
+            # Dynamic Prompt Assembly based on the NLP intent
+            system_prompt = self.brain.get_system_prompt(self.state, self.last_error, intent=intent)
+            decision = self.ai.think(system_prompt, self.history.get_context())
             
             if decision["type"] == "error":
                 logger.error(f"[!] INFERENCE FATAL: {decision['content']}")
@@ -103,14 +113,10 @@ class LinkCore:
                 
             elif decision["type"] == "tool_call":
                 t_name, t_args = decision["tool_name"], decision["arguments"]
-                
-                # Standardized tool logging
                 self.history.add_message("model", "", tool_calls=[decision])
                 
                 result = self.process_tool_call(t_name, t_args)
                 obs_data = result.get("data", result.get("message", "Executed."))
-                
-                # Feed the observation back into the loop
                 self.history.add_message("system", str(obs_data), tool_results=[{"tool_name": t_name, "content": obs_data}])
 
         self.trip_breaker("LLM Recursive Loop Detected.")
@@ -159,18 +165,23 @@ class LinkCore:
         kwargs = kwargs or {}
         
         # Fallback Check in case the LLM bypassed the abstraction layer
-        if "." in uid and not uid.startswith("node_"):
+        if "." in uid:
             logger.warning(f"[!] Direct hardware addressing detected for '{uid}'. Activating Fallback Router.")
-            domain = uid.split(".")[0]
+            domain, name = uid.split(".", 1)
+            
+            # Strip known suffixes to keep keys aligned with graph_sync.py
+            base_name = name
+            for suffix in ["_light", "_battery", "_power", "_switch", "_sensor"]:
+                if base_name.endswith(suffix):
+                    base_name = base_name[:-len(suffix)]
+                    break
+                    
+            clean_uid = f"{domain}_{base_name}"
             service_data = {"entity_id": uid}
             service_data.update(kwargs)
-            success = self.hass.call_service(domain, service, service_data)
+            self.hass.call_service(domain, service, service_data)
             
-            self.db.upsert_lore(
-                uid=f"node_{uid.replace('.', '_')}",
-                node_type="hardware",
-                new_pointers={"hass_id": uid}
-            )
+            self.db.upsert_lore(uid=clean_uid, node_type="hardware", new_pointers={"hass_id": uid})
             return f"Fallback Execution: Action dispatched to unmapped entity {uid}."
 
         # Nominal Abstraction Route
@@ -222,26 +233,21 @@ class LinkCore:
             return f"Successfully executed {service} on physical asset linked to {uid}."
         return f"Hardware Layer Rejection: HASS API call failed for {uid}."
 
-    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_uids=None, **kwargs) -> str:
+    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_links=None, delete_uids=None, rename_uids=None, **kwargs) -> str:
         """Translates and strictly validates the LLM's batched Hybrid Schema tool call."""
         results = []
-        allowed_types = {"hardware", "person", "location", "concept", "routine", "security_hardware"}
+        allowed_types = {"hardware", "person", "location", "concept", "routine", "security_hardware", "pet"}
 
         if upsert_nodes:
             for node in upsert_nodes:
                 uid = node.get("uid")
                 node_type = node.get("node_type")
-                if not uid or node_type not in allowed_types:
-                    logger.warning(f"Skipped invalid node upsert: {uid} (Type: {node_type})")
-                    continue
+                if not uid or node_type not in allowed_types: continue
                 
                 self.db.upsert_lore(
-                    uid=uid,
-                    node_type=node_type,
-                    display_name=node.get("display_name"),
-                    new_traits=node.get("new_traits", {}),
-                    new_pointers=node.get("new_pointers", {}),
-                    aliases=node.get("aliases", [])
+                    uid=uid, node_type=node_type, display_name=node.get("display_name"),
+                    new_traits=node.get("new_traits", {}), new_pointers=node.get("new_pointers", {}),
+                    aliases=node.get("aliases")
                 )
             results.append(f"Upserted {len(upsert_nodes)} nodes")
 
@@ -249,6 +255,51 @@ class LinkCore:
             for link in create_links:
                 self.db.create_relationship(link["source"], link["target"], link["relation"])
             results.append(f"Created {len(create_links)} links")
+
+        if delete_links:
+            cursor = self.db.conn.cursor()
+            for link in delete_links:
+                cursor.execute("""
+                    DELETE FROM edges 
+                    WHERE source_uid = ? AND target_uid = ? AND relationship = ?
+                """, (link["source"], link["target"], link["relation"]))
+            self.db.conn.commit()
+            results.append(f"Severed {len(delete_links)} relationships")
+
+        # Primary Key Migration Protocol
+        if rename_uids:
+            cursor = self.db.conn.cursor()
+            for remap in rename_uids:
+                old_uid = remap["old_uid"]
+                new_uid = remap["new_uid"]
+                
+                # Verify structural source exists in SQLite
+                cursor.execute("SELECT node_type, display_name, aliases, system_pointers, traits FROM nodes WHERE uid = ?", (old_uid,))
+                row = cursor.fetchone()
+                if not row: continue
+                
+                node_type, display_name, aliases, system_pointers, traits = row
+                
+                # Mint the new identity envelope
+                cursor.execute("""
+                    INSERT INTO nodes (uid, node_type, display_name, aliases, system_pointers, traits)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (new_uid, node_type, display_name, aliases, system_pointers, traits))
+                
+                # Re-route relational edges before deleting to protect foreign key constraints
+                cursor.execute("UPDATE edges SET source_uid = ? WHERE source_uid = ?", (new_uid, old_uid))
+                cursor.execute("UPDATE edges SET target_uid = ? WHERE target_uid = ?", (new_uid, old_uid))
+                
+                # Safely purge legacy row identifier
+                cursor.execute("DELETE FROM nodes WHERE uid = ?", (old_uid,))
+                self.db.conn.commit()
+                
+                # Synchronize Vector Space to stop ghost lookups
+                self.db.vector.delete_vector(old_uid)
+                envelope_text = self.db.generate_semantic_envelope(new_uid, display_name, aliases)
+                self.db.vector.upsert_node_vector(new_uid, envelope_text)
+                
+            results.append(f"Migrated {len(rename_uids)} primary keys")
 
         if delete_uids:
             for uid in delete_uids:
@@ -263,7 +314,7 @@ class LinkCore:
         target_id = uid
 
         # Check the LLM didn't bypass the abstraction layer
-        if "." in uid and not uid.startswith("node_"):
+        if "." in uid:
             logger.warning(f"[!] Direct hardware inspection tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()
@@ -321,7 +372,7 @@ class LinkCore:
         event_name = uid
 
         #Check that the LLM didn't bypass the abstraction layer
-        if not uid.startswith("node_"):
+        if "." in uid:
             logger.warning(f"[!] Direct event execution tracking for '{uid}'. Fallback active.")
         else:
             cursor = self.db.conn.cursor()
