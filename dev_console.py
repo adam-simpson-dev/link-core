@@ -65,8 +65,8 @@ def main():
             args = {"keywords": arg_str.split()}
             
         elif base_cmd == "remove":
-            tool = "delete_node"
-            args = {"uid": arg_str.strip()}
+            tool = "modify_lore"
+            args = {"delete_uids": [arg_str.strip()]}
             
         elif base_cmd == "wipe" and arg_str.strip() == "lore":
             confirm = input("[!] CRITICAL: This will destroy all memory. Proceed? [Y/N]: ")

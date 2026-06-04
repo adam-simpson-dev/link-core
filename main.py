@@ -147,12 +147,16 @@ class LinkCore:
     # These are kept separate from the dispatch map to allow for more complex logic, error handling, or multi-step processes that might be required for certain tools.
 
     def handle_reset_breaker(self):
-        """Administrative override to clear SAFE_MODE."""
+        """Administrative override to clear SAFE_MODE and purge poisoned context."""
         self.state = "NOMINAL"
         self.last_error = None
         self.error_streak = 0
-        logger.info("[*] CIRCUIT BREAKER RESET. System Nominal.")
-        return "Core systems unlocked and restored to NOMINAL."
+        
+        # The Cognitive Flush: Wipe the poisoned context window so the LLM doesn't immediately loop again
+        self.history.history.clear()
+        
+        logger.info("[*] CIRCUIT BREAKER RESET. Cognitive buffer flushed. System Nominal.")
+        return "Core systems unlocked, short-term memory purged, and restored to NOMINAL."
 
     def handle_read_document(self, file_path):
         if not os.path.exists(file_path):
@@ -237,7 +241,7 @@ class LinkCore:
             return f"Successfully executed {service} on physical asset linked to {uid}."
         return f"Hardware Layer Rejection: HASS API call failed for {uid}."
 
-    def enforce_namespace(self, raw_uid: str, node_type: str) -> str:
+    def _enforce_namespace(self, raw_uid: str, node_type: str) -> str:
         """Absolute Prefix Router: mathematically enforces graph namespaces."""
         prefix_map = {
             "location": "loc_",
@@ -259,6 +263,32 @@ class LinkCore:
                 uid = f"{expected_prefix}{uid}"
         return uid
 
+    def _resolve_uid(self, raw_uid: str) -> str:
+        """Dynamically resolves a naked LLM UID to its true prefixed database counterpart."""
+        cursor = self.db.conn.cursor()
+        
+        # Exact Match (Hardware IDs or correctly generated UIDs)
+        cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (raw_uid,))
+        if cursor.fetchone(): return raw_uid
+        
+        # Prefix Hunt (Check if the namespace shield modified this UID)
+        prefixes = ["person_", "concept_", "loc_", "pet_", "routine_"]
+        for p in prefixes:
+            candidate = f"{p}{raw_uid}"
+            cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (candidate,))
+            if cursor.fetchone(): return candidate
+            
+            # Catch reverse hallucination (e.g., LLM generated 'concept_name' but DB holds 'person_name')
+            if raw_uid.startswith(p):
+                naked = raw_uid.replace(p, "", 1)
+                for other_p in prefixes:
+                    alt_candidate = f"{other_p}{naked}"
+                    cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (alt_candidate,))
+                    if cursor.fetchone(): return alt_candidate
+                    
+        # Fallback to raw string if completely unknown (allows ghost stubs for truly missing data)
+        return raw_uid
+
     def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_links=None, delete_uids=None, rename_uids=None, merge_uids=None, **kwargs) -> str:
         """Translates and routes the LLM's batched Hybrid Schema tool call."""
         results = []
@@ -270,7 +300,7 @@ class LinkCore:
                 node_type = node.get("node_type")
                 if not raw_uid or node_type not in allowed_types: continue
                 
-                uid = self.enforce_namespace(raw_uid, node_type)
+                uid = self._enforce_namespace(raw_uid, node_type)
                 
                 self.db.upsert_lore(
                     uid=uid, node_type=node_type, display_name=node.get("display_name"),
@@ -281,26 +311,33 @@ class LinkCore:
 
         if create_links:
             for link in create_links:
-                self.db.create_relationship(link["source"], link["target"], link["relation"])
+                real_src = self._resolve_uid(link["source"])
+                real_tgt = self._resolve_uid(link["target"])
+                self.db.create_relationship(real_src, real_tgt, link["relation"])
             results.append(f"Created {len(create_links)} links")
 
         if delete_links:
             for link in delete_links:
-                self.db.delete_relationship(link["source"], link["target"], link["relation"])
+                real_src = self._resolve_uid(link["source"])
+                real_tgt = self._resolve_uid(link["target"])
+                self.db.delete_relationship(real_src, real_tgt, link["relation"])
             results.append(f"Severed {len(delete_links)} relationships")
 
         if rename_uids:
             success_count = 0
             for remap in rename_uids:
-                if self.db.rename_node(remap["old_uid"], remap["new_uid"]):
+                real_old = self._resolve_uid(remap["old_uid"])
+                if self.db.rename_node(real_old, remap["new_uid"]):
                     success_count += 1
             results.append(f"Migrated {success_count} primary keys")
 
         if merge_uids:
             for merge in merge_uids:
+                real_targets = [self._resolve_uid(u) for u in merge["target_uids"]]
+                real_master = self._resolve_uid(merge["master_uid"])
                 self.db.merge_nodes(
-                    target_uids=merge["target_uids"],
-                    master_uid=merge["master_uid"],
+                    target_uids=real_targets,
+                    master_uid=real_master,
                     display_name=merge["display_name"],
                     synthesized_traits={}
                 )
@@ -308,7 +345,8 @@ class LinkCore:
 
         if delete_uids:
             for uid in delete_uids:
-                self.db.delete_node(uid)
+                real_uid = self._resolve_uid(uid)
+                self.db.delete_node(real_uid)
             results.append(f"Deleted {len(delete_uids)} nodes")
 
         return " | ".join(results) if results else "No modifications provided."
