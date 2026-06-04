@@ -285,5 +285,55 @@ class DatabaseManager:
         logger.warning("[!] LORE GRAPH AND VECTOR MEMORY WIPED BY USER COMMAND.")
         return "System memory reset to factory defaults. All nodes and vectors purged."
 
+    def scan_semantic_clusters(self, tier_1_threshold=0.90, tier_2_threshold=0.80):
+        """
+        Phase 18 Vector Radar: Scans concept nodes and groups them into merge tiers.
+        """
+        cursor = self.conn.cursor()
+        # Restrict strict jurisdiction strictly to concept nodes
+        cursor.execute("SELECT uid, display_name, aliases FROM nodes WHERE node_type = 'concept'")
+        concept_nodes = cursor.fetchall()
+        
+        processed_uids = set()
+        tier_1_clusters = [] # Auto-Merge Band
+        tier_2_clusters = [] # Human Review Band
+        
+        for uid, name, aliases in concept_nodes:
+            if uid in processed_uids: continue
+                
+            # Regenerate the exact envelope text used for vector indexing
+            envelope = self.generate_semantic_envelope(uid, name, aliases)
+            
+            # Fetch similarities from the vector engine
+            matches = self.vector.get_similarity_scores(envelope, n_results=5)
+            
+            current_t1_cluster = [uid]
+            current_t2_cluster = [uid]
+            
+            for match_uid, score in matches:
+                if match_uid == uid or match_uid in processed_uids: continue
+                    
+                # Double-check jurisdiction: Do not merge hardware/locations
+                cursor.execute("SELECT node_type FROM nodes WHERE uid = ?", (match_uid,))
+                row = cursor.fetchone()
+                if not row or row[0] != 'concept': continue
+                
+                if score >= tier_1_threshold:
+                    current_t1_cluster.append(match_uid)
+                    processed_uids.add(match_uid)
+                elif score >= tier_2_threshold:
+                    current_t2_cluster.append(match_uid)
+                    processed_uids.add(match_uid)
+            
+            # Only append clusters if redundancies were actually found
+            if len(current_t1_cluster) > 1:
+                tier_1_clusters.append(current_t1_cluster)
+            elif len(current_t2_cluster) > 1:
+                tier_2_clusters.append(current_t2_cluster)
+                
+            processed_uids.add(uid)
+            
+        return {"tier_1": tier_1_clusters, "tier_2": tier_2_clusters}
+
     def close(self):
         self.conn.close()
