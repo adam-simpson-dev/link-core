@@ -245,6 +245,49 @@ class DatabaseManager:
         
         return f"Link created: {source_uid} -> {relationship} -> {target_uid}"
     
+    def delete_relationship(self, source_uid: str, target_uid: str, relationship: str) -> bool:
+        """Safely severs a specific topological edge."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            DELETE FROM edges 
+            WHERE source_uid = ? AND target_uid = ? AND relationship = ?
+        """, (source_uid, target_uid, relationship))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def rename_node(self, old_uid: str, new_uid: str) -> bool:
+        """Migrates a primary key while preserving edges and vector synchronization."""
+        cursor = self.conn.cursor()
+        
+        # Verify structural source exists
+        cursor.execute("SELECT node_type, display_name, aliases, system_pointers, traits FROM nodes WHERE uid = ?", (old_uid,))
+        row = cursor.fetchone()
+        if not row: 
+            return False
+        
+        node_type, display_name, aliases, system_pointers, traits = row
+        
+        # Mint the new identity envelope
+        cursor.execute("""
+            INSERT INTO nodes (uid, node_type, display_name, aliases, system_pointers, traits)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (new_uid, node_type, display_name, aliases, system_pointers, traits))
+        
+        # Re-route relational edges before deleting to protect foreign key constraints
+        cursor.execute("UPDATE edges SET source_uid = ? WHERE source_uid = ?", (new_uid, old_uid))
+        cursor.execute("UPDATE edges SET target_uid = ? WHERE target_uid = ?", (new_uid, old_uid))
+        
+        # Safely purge legacy row identifier
+        cursor.execute("DELETE FROM nodes WHERE uid = ?", (old_uid,))
+        self.conn.commit()
+        
+        # Synchronize Vector Space to stop ghost lookups
+        self.vector.delete_vector(old_uid)
+        envelope_text = self.generate_semantic_envelope(new_uid, display_name, aliases)
+        self.vector.upsert_node_vector(new_uid, envelope_text)
+        
+        return True
+
     def delete_node(self, uid: str):
         """Standardized deletion for SQLite and Vector memory."""
         cursor = self.conn.cursor()

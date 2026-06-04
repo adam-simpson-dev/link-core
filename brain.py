@@ -52,6 +52,21 @@ class MessageHistory:
             while self.history and (self.history[0].get("role") == "system" or "tool_calls" in self.history[0]):
                 self.history.pop(0)
                 
+    def compress_execution_loop(self, retain_turns=4):
+        """
+        Purges volatile tool data from the persistent context window.
+        Leaves only the human prompts and the final AI conversational responses.
+        """
+        compressed = []
+        for msg in self.history:
+            # Keep standard conversational turns. Discard anything containing a tool_call or tool_result.
+            if msg.get("role") in ["user", "model"] and "tool_calls" not in msg and "tool_results" not in msg:
+                compressed.append(msg)
+                
+        # Enforce a strict short-term memory limit to prevent context rot
+        # Each "turn" is a user/model pair, so 4 turns = 8 messages.
+        self.history = compressed[-(retain_turns * 2):] if len(compressed) > (retain_turns * 2) else compressed
+        
     def get_context(self):
         return self.history
 

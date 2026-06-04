@@ -109,6 +109,8 @@ class LinkCore:
                 
             elif decision["type"] == "text":
                 self.history.add_message("model", decision["content"])
+                # The intent is resolved. Purge the system.
+                self.history.compress_execution_loop()
                 return decision["content"]
                 
             elif decision["type"] == "tool_call":
@@ -120,6 +122,8 @@ class LinkCore:
                 self.history.add_message("system", str(obs_data), tool_results=[{"tool_name": t_name, "content": obs_data}])
 
         self.trip_breaker("LLM Recursive Loop Detected.")
+        # Ensure we don't permanently trap the volatile bloat if the loop crashes
+        self.history.compress_execution_loop()
         return "Maximum iterations reached."
 
     def process_tool_call(self, tool_name: str, arguments: dict):
@@ -143,12 +147,16 @@ class LinkCore:
     # These are kept separate from the dispatch map to allow for more complex logic, error handling, or multi-step processes that might be required for certain tools.
 
     def handle_reset_breaker(self):
-        """Administrative override to clear SAFE_MODE."""
+        """Administrative override to clear SAFE_MODE and purge poisoned context."""
         self.state = "NOMINAL"
         self.last_error = None
         self.error_streak = 0
-        logger.info("[*] CIRCUIT BREAKER RESET. System Nominal.")
-        return "Core systems unlocked and restored to NOMINAL."
+        
+        # The Cognitive Flush: Wipe the poisoned context window so the LLM doesn't immediately loop again
+        self.history.history.clear()
+        
+        logger.info("[*] CIRCUIT BREAKER RESET. Cognitive buffer flushed. System Nominal.")
+        return "Core systems unlocked, short-term memory purged, and restored to NOMINAL."
 
     def handle_read_document(self, file_path):
         if not os.path.exists(file_path):
@@ -233,10 +241,58 @@ class LinkCore:
             return f"Successfully executed {service} on physical asset linked to {uid}."
         return f"Hardware Layer Rejection: HASS API call failed for {uid}."
 
-    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_links=None, delete_uids=None, rename_uids=None, **kwargs) -> str:
-        """Translates and strictly validates the LLM's batched Hybrid Schema tool call."""
+    def _enforce_namespace(self, raw_uid: str, node_type: str) -> str:
+        """Absolute Prefix Router: mathematically enforces graph namespaces."""
+        prefix_map = {
+            "location": "loc_",
+            "person": "person_",
+            "pet": "pet_",
+            "concept": "concept_",
+            "routine": "routine_"
+        }
+        uid = raw_uid
+        if node_type in prefix_map:
+            expected_prefix = prefix_map[node_type]
+            if not uid.startswith(expected_prefix):
+                # Strip any rogue prefixes the LLM might have guessed
+                for val in prefix_map.values():
+                    if uid.startswith(val):
+                        uid = uid.replace(val, "", 1)
+                        break
+                # Enforce the mathematical boundary
+                uid = f"{expected_prefix}{uid}"
+        return uid
+
+    def _resolve_uid(self, raw_uid: str) -> str:
+        """Dynamically resolves a naked LLM UID to its true prefixed database counterpart."""
+        cursor = self.db.conn.cursor()
+        
+        # Exact Match (Hardware IDs or correctly generated UIDs)
+        cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (raw_uid,))
+        if cursor.fetchone(): return raw_uid
+        
+        # Prefix Hunt (Check if the namespace shield modified this UID)
+        prefixes = ["person_", "concept_", "loc_", "pet_", "routine_"]
+        for p in prefixes:
+            candidate = f"{p}{raw_uid}"
+            cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (candidate,))
+            if cursor.fetchone(): return candidate
+            
+            # Catch reverse hallucination (e.g., LLM generated 'concept_name' but DB holds 'person_name')
+            if raw_uid.startswith(p):
+                naked = raw_uid.replace(p, "", 1)
+                for other_p in prefixes:
+                    alt_candidate = f"{other_p}{naked}"
+                    cursor.execute("SELECT uid FROM nodes WHERE uid = ?", (alt_candidate,))
+                    if cursor.fetchone(): return alt_candidate
+                    
+        # Fallback to raw string if completely unknown (allows ghost stubs for truly missing data)
+        return raw_uid
+
+    def handle_modify_lore(self, upsert_nodes=None, create_links=None, delete_links=None, delete_uids=None, rename_uids=None, merge_uids=None, **kwargs) -> str:
+        """Translates and routes the LLM's batched Hybrid Schema tool call."""
         results = []
-        allowed_types = {"hardware", "person", "location", "concept", "routine", "security_hardware", "pet"}
+        allowed_types = {"hardware", "security_hardware", "routine", "location", "person", "pet", "concept"}
 
         if upsert_nodes:
             for node in upsert_nodes:
@@ -244,26 +300,7 @@ class LinkCore:
                 node_type = node.get("node_type")
                 if not raw_uid or node_type not in allowed_types: continue
                 
-                # Maps node_type to the strict graph namespace
-                prefix_map = {
-                    "location": "loc_",
-                    "person": "person_",
-                    "pet": "pet_",
-                    "concept": "concept_",
-                    "routine": "routine_"
-                }
-                
-                uid = raw_uid
-                if node_type in prefix_map:
-                    expected_prefix = prefix_map[node_type]
-                    if not uid.startswith(expected_prefix):
-                        # Strip any rogue prefixes the LLM might have guessed
-                        for val in prefix_map.values():
-                            if uid.startswith(val):
-                                uid = uid.replace(val, "", 1)
-                                break
-                        # Enforce the mathematical boundary
-                        uid = f"{expected_prefix}{uid}"
+                uid = self._enforce_namespace(raw_uid, node_type)
                 
                 self.db.upsert_lore(
                     uid=uid, node_type=node_type, display_name=node.get("display_name"),
@@ -274,57 +311,42 @@ class LinkCore:
 
         if create_links:
             for link in create_links:
-                self.db.create_relationship(link["source"], link["target"], link["relation"])
+                real_src = self._resolve_uid(link["source"])
+                real_tgt = self._resolve_uid(link["target"])
+                self.db.create_relationship(real_src, real_tgt, link["relation"])
             results.append(f"Created {len(create_links)} links")
 
         if delete_links:
-            cursor = self.db.conn.cursor()
             for link in delete_links:
-                cursor.execute("""
-                    DELETE FROM edges 
-                    WHERE source_uid = ? AND target_uid = ? AND relationship = ?
-                """, (link["source"], link["target"], link["relation"]))
-            self.db.conn.commit()
+                real_src = self._resolve_uid(link["source"])
+                real_tgt = self._resolve_uid(link["target"])
+                self.db.delete_relationship(real_src, real_tgt, link["relation"])
             results.append(f"Severed {len(delete_links)} relationships")
 
-        # Primary Key Migration Protocol
         if rename_uids:
-            cursor = self.db.conn.cursor()
+            success_count = 0
             for remap in rename_uids:
-                old_uid = remap["old_uid"]
-                new_uid = remap["new_uid"]
-                
-                # Verify structural source exists in SQLite
-                cursor.execute("SELECT node_type, display_name, aliases, system_pointers, traits FROM nodes WHERE uid = ?", (old_uid,))
-                row = cursor.fetchone()
-                if not row: continue
-                
-                node_type, display_name, aliases, system_pointers, traits = row
-                
-                # Mint the new identity envelope
-                cursor.execute("""
-                    INSERT INTO nodes (uid, node_type, display_name, aliases, system_pointers, traits)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (new_uid, node_type, display_name, aliases, system_pointers, traits))
-                
-                # Re-route relational edges before deleting to protect foreign key constraints
-                cursor.execute("UPDATE edges SET source_uid = ? WHERE source_uid = ?", (new_uid, old_uid))
-                cursor.execute("UPDATE edges SET target_uid = ? WHERE target_uid = ?", (new_uid, old_uid))
-                
-                # Safely purge legacy row identifier
-                cursor.execute("DELETE FROM nodes WHERE uid = ?", (old_uid,))
-                self.db.conn.commit()
-                
-                # Synchronize Vector Space to stop ghost lookups
-                self.db.vector.delete_vector(old_uid)
-                envelope_text = self.db.generate_semantic_envelope(new_uid, display_name, aliases)
-                self.db.vector.upsert_node_vector(new_uid, envelope_text)
-                
-            results.append(f"Migrated {len(rename_uids)} primary keys")
+                real_old = self._resolve_uid(remap["old_uid"])
+                if self.db.rename_node(real_old, remap["new_uid"]):
+                    success_count += 1
+            results.append(f"Migrated {success_count} primary keys")
+
+        if merge_uids:
+            for merge in merge_uids:
+                real_targets = [self._resolve_uid(u) for u in merge["target_uids"]]
+                real_master = self._resolve_uid(merge["master_uid"])
+                self.db.merge_nodes(
+                    target_uids=real_targets,
+                    master_uid=real_master,
+                    display_name=merge["display_name"],
+                    synthesized_traits={}
+                )
+            results.append(f"Merged {len(merge_uids)} node clusters")
 
         if delete_uids:
             for uid in delete_uids:
-                self.db.delete_node(uid)
+                real_uid = self._resolve_uid(uid)
+                self.db.delete_node(real_uid)
             results.append(f"Deleted {len(delete_uids)} nodes")
 
         return " | ".join(results) if results else "No modifications provided."

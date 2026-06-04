@@ -78,6 +78,19 @@ TOOL_SCHEMAS = [
                         },
                         "required": ["old_uid", "new_uid"]
                     }
+                },
+                "merge_uids": {
+                    "type": "array",
+                    "description": "Folds multiple redundant nodes into a single master node. Automatically aggregates all pointers and aliases, re-routes edges, and deletes the targets.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "target_uids": {"type": "array", "items": {"type": "string"}, "description": "List of UIDs to absorb and delete (e.g., ['person_nickname'])"},
+                            "master_uid": {"type": "string", "description": "The UID that will survive and inherit the data (e.g., 'person_name_surname')"},
+                            "display_name": {"type": "string"}
+                        },
+                        "required": ["target_uids", "master_uid", "display_name"]
+                    }
                 }
             }
         }

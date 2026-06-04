@@ -72,7 +72,7 @@ def heal_grid():
             for link in args["create_links"]:
                 try:
                     db.create_relationship(link["source"], link["target"], link["relation"])
-                    cursor.execute("DELETE FROM edges WHERE source_uid = ? AND target_uid = 'unassigned_inbox'", (link["source"],))
+                    db.delete_relationship(link["source"], "unassigned_inbox", "requires_triage")
                     actions_taken.append(f"ACTION: Linked {link['source']} to {link['target']} via {link['relation']}.")
                 except Exception as e:
                     logger.warning(f"[!] Janitor failed to create link {link['source']} -> {link['target']}: {e}")
