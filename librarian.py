@@ -31,10 +31,11 @@ def run_compression():
             "You will receive a JSON array representing redundant conceptual nodes. "
             "Your task is to synthesize them into a single, high-density JSON payload. "
             "CRITICAL: Return ONLY valid JSON matching this schema: "
-            "{ \"master_display_name\": \"Shortest, most concise common name\", \"synthesized_traits\": { ...combined properties... } } "
+            "{ \"master_uid\": \"A new, clean snake_case primary key starting with concept_ followed by a short but understandable identifier\", "
+            "\"master_display_name\": \"The shortest, most universally recognizable name for this concept. Do NOT hallucinate acronym expansions.\", "
+            "\"synthesized_traits\": { ...combined properties... } } "
             "Do not output markdown or conversational text. Output pure JSON."
         )
-
         cursor = db.conn.cursor()
         
         for cluster in tier_1:
@@ -67,14 +68,16 @@ def run_compression():
                 master_name = result.get("master_display_name", cluster_data[0]["name"])
                 merged_traits = result.get("synthesized_traits", {})
                 
-                # Anchor the new master UID to the shortest, cleanest identifier in the cluster
-                shortest_uid = sorted(cluster, key=len)[0]
+                # Extract the LLM's clean primary key, enforcing the concept topology
+                new_master_uid = result.get("master_uid", "")
+                if not new_master_uid or not new_master_uid.startswith("concept_"):
+                    new_master_uid = f"concept_{master_name.lower().replace(' ', '_')}"
                 
-                logger.info(f"[*] Synthesis successful. Splice Target: {shortest_uid} ({master_name})")
+                logger.info(f"[*] Synthesis successful. Splice Target: {new_master_uid} ({master_name})")
                 
                 db.merge_nodes(
                     target_uids=cluster, 
-                    master_uid=shortest_uid, 
+                    master_uid=new_master_uid, 
                     display_name=master_name, 
                     synthesized_traits=merged_traits
                 )
