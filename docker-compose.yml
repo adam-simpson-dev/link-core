@@ -6,9 +6,7 @@ services:
       - "8000:8000"
     volumes:
       # Map the local data directory to preserve LORE across reboots
-      - ./data/memory.sqlite:/app/memory.sqlite
-      - ./data/chroma_db:/app/chroma_db
-      - ./link-core.log:/app/link-core.log
+      - ./data:/app/data
     env_file:
       - .env
     restart: unless-stopped

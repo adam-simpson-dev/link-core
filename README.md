@@ -1,45 +1,37 @@
-# ⚡ LINK-CORE: Autonomous Home Orchestrator
+# ⚡ LINK-CORE: Autonomous Environment Orchestrator
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-REST_API-009688?logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-Graph_Topology-003B57?logo=sqlite&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Semantics-FF6B6B?logo=database&logoColor=white)
-![Home Assistant](https://img.shields.io/badge/Home_Assistant-Bridge-41BDF5?logo=homeassistant&logoColor=white)
-![Gemini](https://img.shields.io/badge/Gemini_2.5-Inference-8E75B2?logo=google&logoColor=white)
-![WebGL](https://img.shields.io/badge/Three.js-WebGL_GUI-000000?logo=three.js&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Phase_15_Complete-brightgreen)
+![Home Assistant](https://img.shields.io/badge/Home_Assistant-Hardware_Bridge-41BDF5?logo=homeassistant&logoColor=white)
 
-> **A decoupled, Expert System Architecture bridging a Hybrid Knowledge Graph (Spatial + Semantic) with physical Smart Home hardware via LLM Inference.**
+> **A decoupled, local-first ReAct (Reasoning & Acting) Agent bridging a Hybrid Knowledge Graph with physical Smart Home hardware via LLM Inference.**
 
 ---
 
-## 🧠 Overview
+## 🧠 System Overview
 
-**LINK-CORE** is a local-first orchestration engine. Initially designed as the "Nervous System" for advanced home automation via rigid tool calls, it has purposefully evolved into an **Autonomous ReAct (Reasoning & Acting) Agent**. 
+**LINK-CORE** is an advanced local-first orchestration engine. It solves the primary failure condition of standard LLM home assistants—hallucination—by anchoring probabilistic reasoning to a strict, deterministic environmental state.
 
-By anchoring probabilistic LLM inference (Google Gemini) to a strict deterministic environment, LINK-CORE acts without the typical hallucination risks of standard chatbots. It utilizes a **Hybrid Memory Architecture** (SQLite Graph Topography + ChromaDB Vector Semantics) to maintain context, and a **Dynamic Dispatcher** to execute physical commands via the **Home Assistant REST API**.
+Instead of relying on a massive, bloated context window, LINK-CORE utilizes a custom **Hybrid RAG (Retrieval-Augmented Generation)** architecture. It merges strict relational topography (SQLite) with semantic vector space (ChromaDB), allowing the system to understand both hard physical routing ("Where is the printer?") and squishy human concepts ("What is the ideal sourdough hydration?"). 
 
-## 🏗️ Architecture
+## 🏗️ Architecture & Stack
 
-The system is strictly decoupled into distinct operational layers to ensure high resilience and mathematical routing:
+The system is strictly decoupled into distinct operational domains to ensure high resilience, fault isolation, and API stability.
 
-* **LORE (`database.py` & `vector_memory.py`):** The Hybrid Knowledge Graph. Employs a Strict Identity Envelope (SQLite) for infallible routing, and a Volatile Payload sandbox (ChromaDB) for semantic "squishy" data retrieval. 
-* **CORTEX (`inference.py` & `brain.py`):** The Cognition Engine. Translates physical environment data into temporal prompts, enforcing token conservation and context weighting before passing execution to the LLM.
-* **HASS (`hass_client.py`):** The Hands. A secure, abstracted bridge to the Home Assistant API for reading states, executing services, and pinging system topography.
-* **CORE (`main.py`):** The Orchestrator. Manages the ReAct execution loop, enforces Circuit Breakers against LLM recursive failures, and delegates JSON Tool calls to backend Python methods.
-* **PANOPTICON (`index.html`):** The Visualizer. A high-performance 3D WebGL interface (Three.js/d3-force-3d) rendering real-time system topography, telemetry pings, and internal memory logs.
+* **CORE (The Orchestrator):** `FastAPI` / `Python`. Manages the ReAct execution loop, enforces token conservation via Execution Compression, and delegates JSON tool calls to backend Python methods.
+* **LORE (Hybrid Knowledge Graph):** `SQLite` + `ChromaDB`. Employs a Strict Identity Envelope for infallible topological routing, paired with a volatile vector sandbox for semantic data retrieval.
+* **CORTEX (Cognition & NLP):** `spaCy` + `Google Gemini`. Translates natural language into semantic intents. Intercepts hardware commands via localized NLP before escalating complex logic to the LLM. 
+* **HASS (The Actuator):** A secure, abstracted REST client bridging the Orchestrator to the Home Assistant API for bi-directional state polling and service execution.
+* **PANOPTICON (The Visualizer):** `Three.js` / `d3-force-3d`. A high-performance WebGL interface rendering real-time system topography, telemetry pings, and active context loads.
 
-## 🛠️ Tech Stack
+---
 
-* **Language:** Python 3.12
-* **Memory Structure:** SQLite (Topological Graph) + ChromaDB (Semantic Vector Search)
-* **Cognition:** Google Gemini 2.5 Flash API
-* **GUI:** Native HTML5, CSS Flexbox, Three.js, d3-force-3d
-* **Environment:** Windows/VS Code (Client) -> Proxmox LXC Debian/Ubuntu (Server)
-* **Key Python Libraries:** `fastapi`, `uvicorn`, `requests`, `google-generativeai`, `chromadb`, `spacy` (Planned)
+## 🚀 Quickstart (Docker Deployment)
 
-## 🚀 Installation (Local Development)
-
-To run the Developer Console and test the bridge manually:
+The fastest way to evaluate the LINK-CORE environment is via the pre-configured Docker pipeline. 
 
 1. **Clone the repository:**
     ```bash
@@ -47,56 +39,50 @@ To run the Developer Console and test the bridge manually:
     cd link-core
     ```
 
-2. **Set up the Virtual Environment:**
+2. **Configure Secrets:**
+    Copy the example environment file and insert your API credentials:
+    ```bash
+    cp .env.example .env
+    ```
+
+3. **Ignite the Core:**
+    ```bash
+    docker-compose up --build -d
+    ```
+    The GUI and API endpoints will be instantly available at `http://localhost:8000`. Persistent database memory is automatically mapped to the local `./data` volume.
+
+---
+
+## 🛠️ Local Source Development
+
+For native development and script testing without containerization:
+
+1. **Set up the Virtual Environment:**
     ```bash
     python3 -m venv .venv
     source .venv/bin/activate
     ```
 
-3. **Install Dependencies:**
+2. **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
+    python -m spacy download en_core_web_sm
     ```
 
-4. **Configure Secrets:**
-    Create a `.env` file in the root directory:
-    ```text
-    HASS_URL=http://YOUR_HA_IP:8123
-    HASS_TOKEN=your_long_lived_access_token
-    GEMINI_API_KEY=your_gemini_api_key
-    CORE_API_URL=[http://127.0.0.1:8000](http://127.0.0.1:8000)
-    ```
-
-5. **Boot the Orchestrator:**
+3. **Boot the Orchestrator:**
     ```bash
     uvicorn api:app --host 0.0.0.0 --port 8000
     ```
 
 **Client Interaction (Remote Console)**
-To interact with the live server offline or diagnose memory faults, run `python dev_console.py` to launch the native CLI Uplink.
+To interact with the live server offline, trigger background daemons, or diagnose memory faults, execute `python dev_console.py` to launch the native CLI Uplink.
 
 ---
 
-## 🔮 Execution Roadmap
+## 🔬 Ongoing Research & Horizons
 
-**Foundation & Abstraction**
-* [x] Phase 1: SQLite Graph Memory (LORE)
-* [x] Phase 2: Home Assistant Bridge (HASS)
-* [x] Phase 3: Dynamic Tool Dispatcher (CORE)
-* [x] Phase 4: Proxmox LXC Deployment & Systemd Daemon
-* [x] Phase 5: FastAPI Bridge & Decoupled Architecture
+The core architecture is stable and deployed. Current R&D is focused on expanding background autonomy and offline capabilities:
 
-**Cognition & UI Integration**
-* [x] Phase 6: Neural Pathways (Context Engineering)
-* [x] Phase 7: The Panopticon (WebGL Visual Dashboard)
-* [x] Phase 8: Cortex Integration (The Gemini Inference Bridge)
-
-**Hardening & Scaling (Current)**
-* [x] Phase 9-14: Hybrid Schema Migration, Vector Semantic Search (ChromaDB), & Circuit Breakers
-* [x] Phase 15: The Strict Envelope, Domain Routing, & High-Performance UI Overhaul
-* [ ] Phase 16: Topological Maintenance & System Memory (The Nocturnal Janitor)
-* [ ] Phase 17: Expert System Orchestrator (NLP Blackboard Routing & Modular Prompts)
-
----
-
-*Developed as a demonstration of decoupled architecture, secure API integration, and local-first data processing.*
+* **Nocturnal Janitor & Librarian Daemons:** Autonomous vector radar sweeps that mathematically identify and compress redundant semantic concepts while the user is asleep.
+* **Spatial Abstraction:** Decoupling raw hardware entity IDs into human-readable area arrays.
+* **SLM Migration:** Optimizing the Prompt Manager and Execution Compression protocols to transition inference from cloud APIs to a localized 8B parameter offline model (e.g., Llama 3).

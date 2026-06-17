@@ -10,3 +10,4 @@ chromadb
 sentence-transformers
 google-generativeai
 pydantic
+spacy

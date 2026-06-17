@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 
 # Log Silencer: Drops high-frequency GUI polling from the log file
 class FilterHeartbeatLogs(logging.Filter):
@@ -20,8 +21,12 @@ def setup_core_logger():
     # Standardized format: Timestamp [LEVEL] ModuleName: Message
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 
+    # Ensure the data directory exists before the logger attempts to mount
+    log_path = "data/link-core.log"
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
     # File Handler
-    file_handler = logging.FileHandler("link-core.log")
+    file_handler = logging.FileHandler(log_path)
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
