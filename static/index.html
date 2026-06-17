@@ -168,7 +168,8 @@
                 const opacity = node.textOpacity || 0.4; 
                 label.color = `rgba(0, 255, 255, ${opacity})`; 
                 label.textHeight = Math.max(4, size * 0.6); 
-                label.position.y = size + 4; 
+                label.position.y = size + 4;
+                label.material.depthWrite = false;
                 group.add(label);
 
                 meshRegistry[node.id] = group; 

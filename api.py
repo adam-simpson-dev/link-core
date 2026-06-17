@@ -84,7 +84,7 @@ async def health():
 async def view_logs():
     """Serves the backend log file directly to the browser as plain text."""
     import os
-    file_path = "link-core.log"
+    file_path = "data/link-core.log"
     if os.path.exists(file_path):
         # 'text/plain' forces the browser to display it rather than triggering a download
         return FileResponse(file_path, media_type="text/plain")
