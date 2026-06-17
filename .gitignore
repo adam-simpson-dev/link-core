@@ -6,6 +6,7 @@ __pycache__/
 # Secrets & Data (CRITICAL)
 .env
 memory.sqlite
+chroma_db/
 *.log
 
 # IDE

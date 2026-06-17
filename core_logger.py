@@ -21,7 +21,7 @@ def setup_core_logger():
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 
     # File Handler
-    file_handler = logging.FileHandler("link-core.log")
+    file_handler = logging.FileHandler("data/link-core.log")
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 

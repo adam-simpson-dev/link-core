@@ -3,7 +3,7 @@ from chromadb.utils import embedding_functions
 import os
 
 class VectorManager:
-    def __init__(self, path="./chroma_db"):
+    def __init__(self, path="data/chroma_db"):
         # Local embedding model (~300MB RAM)
         self.embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2"

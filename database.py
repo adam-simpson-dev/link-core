@@ -1,13 +1,18 @@
 import sqlite3
 import logging
+import os
 from core_logger import setup_core_logger
 from vector_memory import VectorManager
 
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    def __init__(self, db_path="memory.sqlite"):
+    def __init__(self, db_path="data/memory.sqlite"):
         self.db_path = db_path
+        
+        # Ensure the directory exists before SQLite tries to write
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.execute("PRAGMA foreign_keys = ON;")
         self.vector = VectorManager() 
